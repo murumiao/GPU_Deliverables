@@ -1,7 +1,8 @@
-
+# Create folder and if it exists, clean it
 mkdir -p ./data
 rm -rf ./data
 mkdir -p ./data
+
 urls=(
     "https://suitesparse-collection-website.herokuapp.com/MM/SNAP/soc-sign-Slashdot081106.tar.gz"
 

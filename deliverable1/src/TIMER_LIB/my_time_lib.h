@@ -21,7 +21,16 @@
         MPI_Barrier(MPI_COMM_WORLD);                                          \
     } while (0);
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 double arithmetic_mean(double* v, int len);
 double geometric_mean(double* v, int len);
 double sigma_fn_sol(double* v, double mu, int len);
+
+#ifdef __cplusplus
+}
+#endif
+
 #endif
