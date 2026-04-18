@@ -10,30 +10,64 @@ OBJ_FOLDER := obj
 SRC_FOLDER := src
 BIN_FOLDER := bin
 
-CPU_NAME=cpu_coo
-GPU_NAME=gpu_coo_sequential
-
-MAIN_BIN=$(BIN_FOLDER)/$(CPU_NAME)
-GPU_BIN=$(BIN_FOLDER)/$(GPU_NAME)
-
-MAIN_SRC=$(SRC_FOLDER)/$(CPU_NAME).c
-GPU_SRC=$(SRC_FOLDER)/$(GPU_NAME).cu
-
 OBJECTS = $(OBJ_FOLDER)/my_time_lib.o
 
-all: $(MAIN_BIN) $(GPU_BIN)
+
+#############
+#### COO ####
+############# 
+CPU_NAME_COO=cpu_coo
+GPU_NAME_COO=gpu_coo_sequential
+
+CPU_COO_BIN=$(BIN_FOLDER)/$(CPU_NAME_COO)
+GPU_COO_BIN=$(BIN_FOLDER)/$(GPU_NAME_COO)
+
+CPU_COO_SRC=$(SRC_FOLDER)/$(CPU_NAME_COO).c
+GPU_COO_SRC=$(SRC_FOLDER)/$(GPU_NAME_COO).cu
+
+$(CPU_COO_BIN): $(CPU_COO_SRC) $(OBJECTS)
+	@mkdir -p $(BIN_FOLDER)
+	@$(CC) $^ -o $@ $(LIBS) $(INCLUDES) $(LIB_FLAGS)
+
+$(GPU_COO_BIN): $(GPU_COO_SRC) $(OBJECTS)
+	@mkdir -p $(BIN_FOLDER)
+	@$(NVCC) $^ -o $@ $(INCLUDES) $(LIB_FLAGS) $(GPU_ARCH)
+
+
+#############
+#### CSR ####
+############# 
+
+CPU_NAME_CSR=cpu_csr
+# GPU_NAME_CSR=gpu_csr_sequential
+
+CPU_CSR_BIN=$(BIN_FOLDER)/$(CPU_NAME_CSR)
+# GPU_CSR_BIN=$(BIN_FOLDER)/$(GPU_NAME_CSR)
+
+CPU_CSR_SRC=$(SRC_FOLDER)/$(CPU_NAME_CSR).c
+# GPU_CSR_SRC=$(SRC_FOLDER)/$(GPU_NAME_CSR).cu
+
+$(CPU_CSR_BIN): $(CPU_CSR_SRC) $(OBJECTS)
+	@mkdir -p $(BIN_FOLDER)
+	@$(CC) $^ -o $@ $(LIBS) $(INCLUDES) $(LIB_FLAGS)
+
+# $(GPU_CSR_BIN): $(GPU_CSR_SRC) $(OBJECTS)
+# 	@mkdir -p $(BIN_FOLDER)
+# 	@$(NVCC) $^ -o $@ $(INCLUDES) $(LIB_FLAGS) $(GPU_ARCH)
+
+
+
+
+
+#################
+#### GENERAL ####
+#################
+# all: $(CPU_COO_BIN) $(GPU_COO_BIN) $(CPU_CSR_BIN) $(GPU_CSR_BIN)
+all: $(CPU_COO_BIN) $(CPU_CSR_BIN) $(GPU_COO_BIN) 
+
+clean:
+	rm -rf $(BIN_FOLDER) $(OBJ_FOLDER)
 
 $(OBJ_FOLDER)/my_time_lib.o: $(SRC_FOLDER)/TIMER_LIB/my_time_lib.c
 	@mkdir -p $(BIN_FOLDER) $(OBJ_FOLDER)
 	@$(CC) -c $(SRC_FOLDER)/TIMER_LIB/my_time_lib.c -o $@ $(LIB_FLAGS)
-
-$(MAIN_BIN): $(MAIN_SRC) $(OBJECTS)
-	@mkdir -p $(BIN_FOLDER)
-	@$(CC) $^ -o $@ $(LIBS) $(INCLUDES) $(LIB_FLAGS)
-
-$(GPU_BIN): $(GPU_SRC) $(OBJECTS)
-	@mkdir -p $(BIN_FOLDER)
-	@$(NVCC) $^ -o $@ $(INCLUDES) $(LIB_FLAGS) $(GPU_ARCH)
-
-clean:
-	rm -rf $(BIN_FOLDER) $(OBJ_FOLDER)

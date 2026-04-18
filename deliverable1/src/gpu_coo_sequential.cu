@@ -48,7 +48,7 @@ void readMatrixFile(char* filePath, int** ARow, int** ACol, double** AVal, int* 
     fclose(fp);
 }
 
-__global__ void coo_mvsp_sequential(int* ARow, int* ACol, double* AVal, double* v, int nnz, double* result) {
+__global__ void coo_spmv_sequential(int* ARow, int* ACol, double* AVal, double* v, int nnz, double* result) {
     int thread_id = blockIdx.x * blockDim.x + threadIdx.x;
     int total_threads = gridDim.x * blockDim.x;
     if (thread_id >= nnz) {
@@ -65,10 +65,19 @@ __global__ void coo_mvsp_sequential(int* ARow, int* ACol, double* AVal, double* 
         }
     }
 }
+__global__ void coo_spmv_stride(int* ARow, int* ACol, double* AVal, double* v, int nnz, double* result) {
+    int thread_id = blockIdx.x * blockDim.x + threadIdx.x;
+    int total_threads = gridDim.x * blockDim.x;
+    if (thread_id >= nnz) {
+        return;
+    }
+    for (int i = thread_id; i < nnz; i += total_threads) {
+        double product = AVal[i] * v[ACol[i]];
+        atomicAdd(&result[ARow[i]], product);
+    }
+}
 void checkCorrect(double* result, int n) {
-    if (result[0] == 3.3 && result[1] == 2.5 && result[2] == 3) {
-        printf("Success!\n");
-    } else {
+    if (!(result[0] == 3.3 && result[1] == 2.5 && result[2] == 3)) {
         printf("Fail!\n");
         for (int j = 0; j < n; j++) {
             printf("%f,", result[j]);
@@ -77,11 +86,12 @@ void checkCorrect(double* result, int n) {
     }
 }
 int main(int argc, char* argv[]) {
-    if (argc != 2) {
-        fprintf(stderr, "Usage %s <path_to_matrix>\n", argv[0]);
+    if (argc != 3) {
+        fprintf(stderr, "Usage %s <path_to_matrix> <mode[0=seq,X=stride]>\n", argv[0]);
         exit(1);
     }
 
+    int mode = atoi(argv[2]);
     //* COO storage
     int n_row = -1, n_col = -1, n_value = -1;
     int *ARow = NULL, *ACol = NULL;
@@ -109,7 +119,13 @@ int main(int argc, char* argv[]) {
     for (int i = 0; i < NUMBER_ITERATIONS; i++) {
         cudaMemset(result, 0, n_row * sizeof(double));
         TIMER_START(0);
-        coo_mvsp_sequential<<<threads_per_block, blocks_per_grid>>>(ARow, ACol, Aval, v, n_value, result);
+        if (mode == 0) {
+            printf("Running Sequential\n");
+            coo_spmv_sequential<<<threads_per_block, blocks_per_grid>>>(ARow, ACol, Aval, v, n_value, result);
+        } else {
+            printf("Running Stride\n");
+            coo_spmv_stride<<<threads_per_block, blocks_per_grid>>>(ARow, ACol, Aval, v, n_value, result);
+        }
         cudaDeviceSynchronize();
 
         if (strcmp(argv[1], "test.mtx") == 0) checkCorrect(result, n_col);
