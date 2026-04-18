@@ -2,6 +2,8 @@ CC=gcc
 NVCC=nvcc
 GPU_ARCH = --gpu-architecture=sm_80
 
+CPU_FLAGS=-Wall
+GPU_FLAGS=--compiler-options -Wall
 LIBS=
 INCLUDES=-I./src/TIMER_LIB
 LIB_FLAGS=-lm
@@ -27,11 +29,11 @@ GPU_COO_SRC=$(SRC_FOLDER)/$(GPU_NAME_COO).cu
 
 $(CPU_COO_BIN): $(CPU_COO_SRC) $(OBJECTS)
 	@mkdir -p $(BIN_FOLDER)
-	@$(CC) $^ -o $@ $(LIBS) $(INCLUDES) $(LIB_FLAGS)
+	@$(CC) $(CPU_FLAGS) $^ -o $@ $(LIBS) $(INCLUDES) $(LIB_FLAGS)
 
 $(GPU_COO_BIN): $(GPU_COO_SRC) $(OBJECTS)
 	@mkdir -p $(BIN_FOLDER)
-	@$(NVCC) $^ -o $@ $(INCLUDES) $(LIB_FLAGS) $(GPU_ARCH)
+	@$(NVCC) $(GPU_FLAGS) $^ -o $@ $(INCLUDES) $(LIB_FLAGS) $(GPU_ARCH)
 
 
 #############
@@ -39,21 +41,21 @@ $(GPU_COO_BIN): $(GPU_COO_SRC) $(OBJECTS)
 ############# 
 
 CPU_NAME_CSR=cpu_csr
-# GPU_NAME_CSR=gpu_csr_sequential
+GPU_NAME_CSR=gpu_csr_sequential
 
 CPU_CSR_BIN=$(BIN_FOLDER)/$(CPU_NAME_CSR)
-# GPU_CSR_BIN=$(BIN_FOLDER)/$(GPU_NAME_CSR)
+GPU_CSR_BIN=$(BIN_FOLDER)/$(GPU_NAME_CSR)
 
 CPU_CSR_SRC=$(SRC_FOLDER)/$(CPU_NAME_CSR).c
-# GPU_CSR_SRC=$(SRC_FOLDER)/$(GPU_NAME_CSR).cu
+GPU_CSR_SRC=$(SRC_FOLDER)/$(GPU_NAME_CSR).cu
 
 $(CPU_CSR_BIN): $(CPU_CSR_SRC) $(OBJECTS)
 	@mkdir -p $(BIN_FOLDER)
-	@$(CC) $^ -o $@ $(LIBS) $(INCLUDES) $(LIB_FLAGS)
+	@$(CC) $(CPU_FLAGS) $^ -o $@ $(LIBS) $(INCLUDES) $(LIB_FLAGS)
 
-# $(GPU_CSR_BIN): $(GPU_CSR_SRC) $(OBJECTS)
-# 	@mkdir -p $(BIN_FOLDER)
-# 	@$(NVCC) $^ -o $@ $(INCLUDES) $(LIB_FLAGS) $(GPU_ARCH)
+$(GPU_CSR_BIN): $(GPU_CSR_SRC) $(OBJECTS)
+	@mkdir -p $(BIN_FOLDER)
+	@$(NVCC) $(GPU_FLAGS) $^ -o $@ $(INCLUDES) $(LIB_FLAGS) $(GPU_ARCH)
 
 
 
@@ -62,8 +64,7 @@ $(CPU_CSR_BIN): $(CPU_CSR_SRC) $(OBJECTS)
 #################
 #### GENERAL ####
 #################
-# all: $(CPU_COO_BIN) $(GPU_COO_BIN) $(CPU_CSR_BIN) $(GPU_CSR_BIN)
-all: $(CPU_COO_BIN) $(CPU_CSR_BIN) $(GPU_COO_BIN) 
+all: $(CPU_COO_BIN) $(GPU_COO_BIN) $(CPU_CSR_BIN) $(GPU_CSR_BIN)
 
 clean:
 	rm -rf $(BIN_FOLDER) $(OBJ_FOLDER)

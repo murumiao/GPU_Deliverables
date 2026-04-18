@@ -30,9 +30,10 @@ void readMatrixFile(char* filePath, int** rowPtr, int** colIndexes, double** val
             *n_col = atoi(token);
             token = strtok(NULL, " ");
             *nnz = atoi(token);
-            *rowPtr = malloc((*n_row + 1) * sizeof(int));
-            *colIndexes = malloc(*nnz * sizeof(int));
-            *valCSR = malloc(*nnz * sizeof(double));
+
+            cudaMallocManaged(rowPtr, (*n_row + 1) * sizeof(int));
+            cudaMallocManaged(colIndexes, *nnz * sizeof(int));
+            cudaMallocManaged(valCSR, *nnz * sizeof(double));
         } else {
             char* token = strtok(buffer, " ");
             int row = atoi(token) - 1;  // 1-based index
@@ -56,11 +57,18 @@ void readMatrixFile(char* filePath, int** rowPtr, int** colIndexes, double** val
     fclose(fp);
 }
 
-void csr_spmv(int* rowPtr, int* colIndexes, double* AVal, int rowLen, double* v, double* result) {
-    for (int i = 0; i < rowLen; i++) {
-        for (int j = rowPtr[i]; j < rowPtr[i + 1]; j++) {
-            result[i] += AVal[j] * v[colIndexes[j]];
-        }
+__global__ void csr_spmv(int* rowPtr, int* colIndexes, double* AVal, int rowLen, double* v, double* result) {
+    int thread_id = blockIdx.x * blockDim.x + threadIdx.x;
+    if (thread_id >= rowLen) {
+        return;
+    }
+
+    int start = rowPtr[thread_id];
+    int end = rowPtr[thread_id + 1];
+
+    for (int i = start; i < end; i++) {
+        double product = AVal[i] * v[colIndexes[i]];
+        result[thread_id] += product;
     }
 }
 
@@ -90,25 +98,27 @@ int main(int argc, char* argv[]) {
     readMatrixFile(argv[1], &rowPtr, &colIndexes, &AVal, &n_row, &n_col, &nnz);
     printf("Matrix loaded!\n");
 
-    // for (int i = 0; i < nnz; i++) {
-    //     printf("%d\t%f\n", colIndexes[i], AVal[i]);
-    // }
-    // printf("\n");
-
     // Create dense vector
-    double* v = malloc(n_col * sizeof(double));
+    double* v;
+    cudaMallocManaged(&v, n_col * sizeof(double));
     for (int i = 0; i < n_col; i++) {
         v[i] = 1.0;
     }
 
-    double* result = malloc(n_row * sizeof(double));
+    double* result;
+    cudaMallocManaged(&result, n_row * sizeof(double));
+
     double timers[TIMED_ITERS];
+
+    int threads_per_block = 256;
+    int blocks_per_grid = (n_row + threads_per_block - 1) / threads_per_block;
 
     TIMER_DEF(0);
     for (int i = 0; i < NUMBER_ITERATIONS; i++) {
-        memset(result, 0, n_row * sizeof(double));
+        cudaMemset(result, 0, n_row * sizeof(double));
         TIMER_START(0);
-        csr_spmv(rowPtr, colIndexes, AVal, n_row, v, result);
+        csr_spmv<<<threads_per_block, blocks_per_grid>>>(rowPtr, colIndexes, AVal, n_row, v, result);
+        cudaDeviceSynchronize();
         TIMER_STOP(0);
         if (strcmp(argv[1], "test.mtx") == 0) checkCorrect(result, n_row);
         if (i > WARMUP_ITERATIONS) {
@@ -118,9 +128,9 @@ int main(int argc, char* argv[]) {
     }
 
     printf("Arithmetic mean on %d iterations: %fs\n", TIMED_ITERS, arithmetic_mean(timers, TIMED_ITERS));
-    free(rowPtr);
-    free(colIndexes);
-    free(AVal);
-    free(v);
+    cudaFree(rowPtr);
+    cudaFree(colIndexes);
+    cudaFree(AVal);
+    cudaFree(v);
     return 0;
 }
