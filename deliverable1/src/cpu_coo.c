@@ -2,15 +2,16 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "./TIMER_LIB/my_time_lib.h"
+#include "../include/my_time_lib.h"
+#include "../include/spmv_utils.h"
 
 #define MAX_STRING 100
-#define NUMBER_ITERATIONS 10
-#define WARMUP_ITERATIONS 2
+#define TOTAL_RUNS 10
+#define WARMUP_RUNS 2
 
-#define TIMED_ITERS NUMBER_ITERATIONS - WARMUP_ITERATIONS
+#define TIMED_RUNS TOTAL_RUNS - WARMUP_RUNS
 
-void readMatrixFile(char* filePath, int** ARow, int** ACol, double** AVal, int* n_row, int* n_col, int* n_value) {
+void readMatrixFile(char* filePath, int** ARow, int** ACol, dtype** AVal, int* n_row, int* n_col, int* n_value) {
     FILE* fp = fopen(filePath, "r");
     if (fp == NULL) {
         fprintf(stderr, "File %s not found", filePath);
@@ -32,14 +33,14 @@ void readMatrixFile(char* filePath, int** ARow, int** ACol, double** AVal, int* 
             *n_value = atoi(token);
             *ARow = malloc(*n_value * sizeof(int));
             *ACol = malloc(*n_value * sizeof(int));
-            *AVal = malloc(*n_value * sizeof(double));
+            *AVal = malloc(*n_value * sizeof(dtype));
         } else {
             char* token = strtok(buffer, " ");
             int row = atoi(token) - 1;  // 1-based index
             token = strtok(NULL, " ");
             int col = atoi(token) - 1;  // 1-based index
             token = strtok(NULL, " ");
-            double val = atof(token);
+            dtype val = atof(token);
             (*ARow)[i] = row;
             (*ACol)[i] = col;
             (*AVal)[i] = val;
@@ -48,13 +49,12 @@ void readMatrixFile(char* filePath, int** ARow, int** ACol, double** AVal, int* 
     }
     fclose(fp);
 }
-void coo_spmv_sequential(int* ARow, int* ACol, double* AVal, double* v, int n, double* result) {
+void coo_spmv_sequential(int* ARow, int* ACol, dtype* AVal, dtype* v, int n, dtype* result) {
     for (int i = 0; i < n; i++) {
         result[ARow[i]] += AVal[i] * v[ACol[i]];
     }
 }
 int main(int argc, char* argv[]) {
-    printf("COO\n");
     if (argc != 2) {
         fprintf(stderr, "Usage %s <path_to_matrix>\n", argv[0]);
         exit(1);
@@ -63,42 +63,37 @@ int main(int argc, char* argv[]) {
     //* COO storage
     int n_row = -1, n_col = -1, n_value = -1;
     int *ARow = NULL, *ACol = NULL;
-    double* Aval = NULL;
+    dtype* Aval = NULL;
 
-    printf("Loading matrix...\n");
     readMatrixFile(argv[1], &ARow, &ACol, &Aval, &n_row, &n_col, &n_value);
-    printf("Matrix loaded!\n");
-    // for (int i = 0; i < n_value; i++) {
-    //     printf("%d\t%d\t%f\n", ARow[i], ACol[i], Aval[i]);
-    // }
-    // printf("%d\t%d\t%d\n", n_row, n_col, n_value);
 
+    print_starting_info("COO CPU", argv[1], TIMED_RUNS, WARMUP_RUNS);
     // Create dense vector
-    double* v = malloc(n_col * sizeof(double));
+    dtype* v = malloc(n_col * sizeof(dtype));
     for (int i = 0; i < n_col; i++) {
         v[i] = 1.0;
     }
 
-    double* result = malloc(n_row * sizeof(double));
-    double timers[TIMED_ITERS];
+    dtype* result = malloc(n_row * sizeof(dtype));
+    double timer_arr[TIMED_RUNS], bandwidth_arr[TIMED_RUNS], gflops_arr[TIMED_RUNS];
 
     TIMER_DEF(0);
-    for (int i = 0; i < NUMBER_ITERATIONS; i++) {
-        memset(result, 0, n_row * sizeof(double));
+    for (int i = 0; i < TOTAL_RUNS; i++) {
+        memset(result, 0, n_row * sizeof(dtype));
         TIMER_START(0);
         coo_spmv_sequential(ARow, ACol, Aval, v, n_value, result);
         TIMER_STOP(0);
-        if (i > WARMUP_ITERATIONS) {
-            timers[i - WARMUP_ITERATIONS] = TIMER_ELAPSED(0) / 1.e6;
+        double exec_time_s = TIMER_ELAPSED(0) / 1.e6;
+        double bandwidth = coo_calculate_bandwidthGBs(n_col, n_row, n_value, exec_time_s);
+        double gflop = coo_calculate_gflop(bandwidth, exec_time_s);
+        if (i > WARMUP_RUNS) {
+            timer_arr[i - WARMUP_RUNS] = exec_time_s;
+            bandwidth_arr[i - WARMUP_RUNS] = bandwidth;
+            gflops_arr[i - WARMUP_RUNS] = gflop;
         }
-        printf("Run %d/%d done in %fs\n", i + 1, NUMBER_ITERATIONS, TIMER_ELAPSED(0) / 1.e6);
+        print_run_stat(i, exec_time_s, bandwidth, gflop);
     }
-
-    for (int j = 0; j < n_row; j++) {
-        printf("%f,", result[j]);
-    }
-    printf("\n");
-    printf("Arithmetic mean on %d iterations: %fs\n", TIMED_ITERS, arithmetic_mean(timers, TIMED_ITERS));
+    final_info_print(timer_arr, bandwidth_arr, gflops_arr, TIMED_RUNS, result, n_row);
     free(ARow);
     free(ACol);
     free(Aval);

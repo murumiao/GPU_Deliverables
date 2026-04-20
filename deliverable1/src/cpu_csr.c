@@ -2,15 +2,16 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "./TIMER_LIB/my_time_lib.h"
+#include "../include/my_time_lib.h"
+#include "../include/spmv_utils.h"
 
 #define MAX_STRING 100
-#define NUMBER_ITERATIONS 10
-#define WARMUP_ITERATIONS 2
+#define TOTAL_RUNS 10
+#define WARMUP_RUNS 2
 
-#define TIMED_ITERS NUMBER_ITERATIONS - WARMUP_ITERATIONS
+#define TIMED_RUNS TOTAL_RUNS - WARMUP_RUNS
 
-void readMatrixFile(char* filePath, int** rowPtr, int** colIndexes, double** valCSR, int* n_row, int* n_col, int* nnz) {
+void readMatrixFile(char* filePath, int** rowPtr, int** colIndexes, dtype** valCSR, int* n_row, int* n_col, int* nnz) {
     FILE* fp = fopen(filePath, "r");
     if (fp == NULL) {
         fprintf(stderr, "File %s not found", filePath);
@@ -32,14 +33,14 @@ void readMatrixFile(char* filePath, int** rowPtr, int** colIndexes, double** val
             *nnz = atoi(token);
             *rowPtr = malloc((*n_row + 1) * sizeof(int));
             *colIndexes = malloc(*nnz * sizeof(int));
-            *valCSR = malloc(*nnz * sizeof(double));
+            *valCSR = malloc(*nnz * sizeof(dtype));
         } else {
             char* token = strtok(buffer, " ");
             int row = atoi(token) - 1;  // 1-based index
             token = strtok(NULL, " ");
             int col = atoi(token) - 1;  // 1-based index
             token = strtok(NULL, " ");
-            double val = atof(token);
+            dtype val = atof(token);
             (*valCSR)[i] = val;
             (*colIndexes)[i] = col;
             while (last_row < row) {
@@ -56,7 +57,7 @@ void readMatrixFile(char* filePath, int** rowPtr, int** colIndexes, double** val
     fclose(fp);
 }
 
-void csr_spmv(int* rowPtr, int* colIndexes, double* AVal, int rowLen, double* v, double* result) {
+void csr_spmv(int* rowPtr, int* colIndexes, dtype* AVal, int rowLen, dtype* v, dtype* result) {
     for (int i = 0; i < rowLen; i++) {
         for (int j = rowPtr[i]; j < rowPtr[i + 1]; j++) {
             result[i] += AVal[j] * v[colIndexes[j]];
@@ -64,7 +65,7 @@ void csr_spmv(int* rowPtr, int* colIndexes, double* AVal, int rowLen, double* v,
     }
 }
 
-void checkCorrect(double* result, int n) {
+void checkCorrect(dtype* result, int n) {
     if (!(result[0] == 3.3 && result[1] == 2.5 && result[2] == 3)) {
         printf("Fail!\n");
         for (int j = 0; j < n; j++) {
@@ -84,7 +85,7 @@ int main(int argc, char* argv[]) {
     //* CSR storage
     int n_row = -1, n_col = -1, nnz = -1;
     int *rowPtr = NULL, *colIndexes = NULL;
-    double* AVal = NULL;
+    dtype* AVal = NULL;
 
     printf("Loading matrix...\n");
     readMatrixFile(argv[1], &rowPtr, &colIndexes, &AVal, &n_row, &n_col, &nnz);
@@ -96,28 +97,25 @@ int main(int argc, char* argv[]) {
     // printf("\n");
 
     // Create dense vector
-    double* v = malloc(n_col * sizeof(double));
+    dtype* v = malloc(n_col * sizeof(dtype));
     for (int i = 0; i < n_col; i++) {
         v[i] = 1.0;
     }
 
-    double* result = malloc(n_row * sizeof(double));
-    double timers[TIMED_ITERS];
+    dtype* result = malloc(n_row * sizeof(dtype));
+    double timers[TIMED_RUNS];
 
     TIMER_DEF(0);
-    for (int i = 0; i < NUMBER_ITERATIONS; i++) {
-        memset(result, 0, n_row * sizeof(double));
+    for (int i = 0; i < TOTAL_RUNS; i++) {
+        memset(result, 0, n_row * sizeof(dtype));
         TIMER_START(0);
         csr_spmv(rowPtr, colIndexes, AVal, n_row, v, result);
         TIMER_STOP(0);
         if (strcmp(argv[1], "test.mtx") == 0) checkCorrect(result, n_row);
-        if (i > WARMUP_ITERATIONS) {
-            timers[i - WARMUP_ITERATIONS] = TIMER_ELAPSED(0) / 1.e6;
+        if (i > WARMUP_RUNS) {
+            timers[i - WARMUP_RUNS] = TIMER_ELAPSED(0) / 1.e6;
         }
-        printf("Run %d/%d done in %fs\n", i + 1, NUMBER_ITERATIONS, TIMER_ELAPSED(0) / 1.e6);
     }
-
-    printf("Arithmetic mean on %d iterations: %fs\n", TIMED_ITERS, arithmetic_mean(timers, TIMED_ITERS));
     free(rowPtr);
     free(colIndexes);
     free(AVal);

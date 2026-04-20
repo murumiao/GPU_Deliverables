@@ -1,0 +1,6 @@
+{
+    "files.associations": {
+        "*.py": "python",
+        "spmv_utils.h": "c"
+    }
+}

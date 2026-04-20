@@ -5,14 +5,14 @@ GPU_ARCH = --gpu-architecture=sm_80
 CPU_FLAGS=-Wall
 GPU_FLAGS=--compiler-options -Wall
 LIBS=
-INCLUDES=-I./src/TIMER_LIB
+INCLUDES=-I./include
 LIB_FLAGS=-lm
 
 OBJ_FOLDER := obj
 SRC_FOLDER := src
 BIN_FOLDER := bin
 
-OBJECTS = $(OBJ_FOLDER)/my_time_lib.o
+OBJECTS = $(OBJ_FOLDER)/my_time_lib.o  $(OBJ_FOLDER)/spmv_utils.o
 
 
 #############
@@ -33,7 +33,7 @@ $(CPU_COO_BIN): $(CPU_COO_SRC) $(OBJECTS)
 
 $(GPU_COO_BIN): $(GPU_COO_SRC) $(OBJECTS)
 	@mkdir -p $(BIN_FOLDER)
-	@$(NVCC) $(GPU_FLAGS) $^ -o $@ $(INCLUDES) $(LIB_FLAGS) $(GPU_ARCH)
+	@$(NVCC) $(GPU_FLAGS) $^ -o $@ $(LIBS) $(INCLUDES) $(LIB_FLAGS) $(GPU_ARCH)
 
 
 #############
@@ -69,6 +69,10 @@ all: $(CPU_COO_BIN) $(GPU_COO_BIN) $(CPU_CSR_BIN) $(GPU_CSR_BIN)
 clean:
 	rm -rf $(BIN_FOLDER) $(OBJ_FOLDER)
 
-$(OBJ_FOLDER)/my_time_lib.o: $(SRC_FOLDER)/TIMER_LIB/my_time_lib.c
-	@mkdir -p $(BIN_FOLDER) $(OBJ_FOLDER)
-	@$(CC) -c $(SRC_FOLDER)/TIMER_LIB/my_time_lib.c -o $@ $(LIB_FLAGS)
+$(OBJ_FOLDER)/my_time_lib.o: $(SRC_FOLDER)/../lib/my_time_lib.c $(OBJ_FOLDER)/spmv_utils.o
+	@mkdir -p $(OBJ_FOLDER)
+	@$(CC) -c $(SRC_FOLDER)/../lib/my_time_lib.c -o $@ $(INCLUDES) $(LIB_FLAGS)
+	
+$(OBJ_FOLDER)/spmv_utils.o: ./lib/spmv_utils.c ./include/spmv_utils.h
+	@mkdir -p $(OBJ_FOLDER)
+	@$(CC) -c ./lib/spmv_utils.c -o $@ $(INCLUDES) $(LIB_FLAGS)
