@@ -29,7 +29,7 @@ void print_nnz_head_spmv(double* result_arr, int len_result, int n) {
 void print_starting_info(const char* type, const char* matrix_name, int amount_runs, int amount_warmpup) {
     printf("========%s========\n", type);
     printf("Matrix: %s\n", matrix_name);
-    printf("Time runs\t %d\n", amount_runs);
+    printf("Timed runs\t %d\n", amount_runs);
     printf("Warmup runs\t %d\n", amount_warmpup);
 }
 void print_run_stat(int runid, double exec_time, double bandwidth, double gflops) {
@@ -41,26 +41,35 @@ void print_run_stat(int runid, double exec_time, double bandwidth, double gflops
 
 void final_info_print(double* timers, double* bandwidths, double* gflops, int amount_runs, double* results, int len_results) {
     printf("========STATS========\n");
-    printf("Arithmetic mean TIME (s)\t%f\n", arithmetic_mean(timers, amount_runs));
-    printf("Arithmetic mean BANDWIDTH(GB/s)\t%f\n", arithmetic_mean(bandwidths, amount_runs));
-    printf("Arithmetic mean GFLOPS\t\t%f\n", arithmetic_mean(gflops, amount_runs));
+    printf("Arithmetic mean TIME \t\t%f s\n", arithmetic_mean(timers, amount_runs));
+    printf("Arithmetic mean BANDWIDTH\t%f GB/s\n", arithmetic_mean(bandwidths, amount_runs));
+    printf("Arithmetic mean FLOPS\t\t%f GFLOPS\n", arithmetic_mean(gflops, amount_runs));
     print_nnz_head_spmv(results, len_results, 5);
 }
 
 double coo_calculate_bandwidthGBs(int n_col, int n_row, int nnz, double time_s) {
-    // effective bandwith = ((Byte_read+ Byte_written)/10^9)/time
+    // effective bandwith = ((Byte_read+Byte_written)/10^9)/time
+    if (time_s == 0.0) {
+        return INFINITY;
+    }
 
-    long long int byte_read_matrix = n_col * n_row * sizeof(dtype) + nnz * sizeof(dtype);
+    long long int byte_read_matrix = nnz * 2 * sizeof(int) + nnz * sizeof(dtype);
     long long int byte_read_vector = n_col * sizeof(dtype);
     long long int byte_read = byte_read_matrix + byte_read_vector;
 
     long long int byte_written_to_result = n_row * sizeof(dtype);
     long long int byte_written = byte_written_to_result;
 
-    return ((byte_read + byte_written) / 10e9) / time_s;
+    long double gigabyte_used = (byte_read + byte_written) / 1.e9;
+    return gigabyte_used / time_s;
 }
 
-double coo_calculate_gflop(double bandwidth, double time_s) {
-    // GFLOP=bandwidth / time_s
-    return bandwidth / time_s;
+double coo_calculate_gflop(int nnz, double time_s) {
+    // GFLOP=2*operations / time_s
+    return (2 * nnz / 1.e9) / time_s;
+}
+
+double csr_calculate_bandwidthGBs(int n_col, int n_row, int nnz, double time_s) {
+}
+double csr_calculate_gflop(double bandwidth, double time_s) {
 }

@@ -59,12 +59,13 @@ __global__ void coo_spmv_sequential(int* ARow, int* ACol, dtype* AVal, dtype* v,
     int start = thread_id * nnz_per_thread;
     int end = min(start + nnz_per_thread, nnz);
 
-    for (int i = start; i < end; i++) {
-        if (i >= nnz) {
-            return;
+    if (start < nnz) {
+        for (int i = start; i < end; i++) {
+            if (i < nnz) {
+                dtype product = AVal[i] * v[ACol[i]];
+                atomicAdd(&result[ARow[i]], product);
+            }
         }
-        dtype product = AVal[i] * v[ACol[i]];
-        atomicAdd(&result[ARow[i]], product);
     }
 }
 __global__ void coo_spmv_stride(int* ARow, int* ACol, dtype* AVal, dtype* v, int nnz, dtype* result) {
@@ -109,27 +110,34 @@ int main(int argc, char* argv[]) {
 
     int threads_per_block = 256;
     int blocks_per_grid = (n_value + threads_per_block - 1) / threads_per_block;
-    TIMER_DEF(0);
+    cudaEvent_t start, stop;
     for (int i = 0; i < TOTAL_RUNS; i++) {
         cudaMemset(result, 0, n_row * sizeof(dtype));
-        TIMER_START(0);
+        cudaEventCreate(&start);
+        cudaEventCreate(&stop);
+        cudaEventRecord(start);
         if (mode == 0) {
-            coo_spmv_sequential<<<threads_per_block, blocks_per_grid>>>(ARow, ACol, Aval, v, n_value, result);
+            coo_spmv_sequential<<<4, 256>>>(ARow, ACol, Aval, v, n_value, result);
         } else {
-            coo_spmv_stride<<<threads_per_block, blocks_per_grid>>>(ARow, ACol, Aval, v, n_value, result);
+            coo_spmv_stride<<<blocks_per_grid, threads_per_block>>>(ARow, ACol, Aval, v, n_value, result);
         }
-        cudaDeviceSynchronize();
-        TIMER_STOP(0);
+        cudaEventRecord(stop);
+        cudaEventSynchronize(stop);
 
-        double exec_time_s = TIMER_ELAPSED(0) / 1.e6;
+        float exec_time_ms;
+        cudaEventElapsedTime(&exec_time_ms, start, stop);
+        double exec_time_s = exec_time_ms / 1000.0;
+
         double bandwidth = coo_calculate_bandwidthGBs(n_col, n_row, n_value, exec_time_s);
-        double gflop = coo_calculate_gflop(bandwidth, exec_time_s);
+        double gflop = coo_calculate_gflop(n_value, exec_time_s);
         if (i > WARMUP_RUNS) {
             timer_arr[i - WARMUP_RUNS] = exec_time_s;
             bandwidth_arr[i - WARMUP_RUNS] = bandwidth;
             gflops_arr[i - WARMUP_RUNS] = gflop;
         }
         print_run_stat(i, exec_time_s, bandwidth, gflop);
+        cudaEventDestroy(start);
+        cudaEventDestroy(stop);
     }
 
     final_info_print(timer_arr, bandwidth_arr, gflops_arr, TIMED_RUNS, result, n_row);

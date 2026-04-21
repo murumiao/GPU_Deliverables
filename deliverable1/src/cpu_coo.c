@@ -85,7 +85,7 @@ int main(int argc, char* argv[]) {
         TIMER_STOP(0);
         double exec_time_s = TIMER_ELAPSED(0) / 1.e6;
         double bandwidth = coo_calculate_bandwidthGBs(n_col, n_row, n_value, exec_time_s);
-        double gflop = coo_calculate_gflop(bandwidth, exec_time_s);
+        double gflop = coo_calculate_gflop(n_value, exec_time_s);
         if (i > WARMUP_RUNS) {
             timer_arr[i - WARMUP_RUNS] = exec_time_s;
             bandwidth_arr[i - WARMUP_RUNS] = bandwidth;

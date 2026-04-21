@@ -21,6 +21,7 @@
         MPI_Barrier(MPI_COMM_WORLD);                                          \
     } while (0);
 
+
 #ifdef __cplusplus
 extern "C" {
 #endif

@@ -118,7 +118,7 @@ int main(int argc, char* argv[]) {
     for (int i = 0; i < TOTAL_RUNS; i++) {
         cudaMemset(result, 0, n_row * sizeof(dtype));
         TIMER_START(0);
-        csr_spmv<<<threads_per_block, blocks_per_grid>>>(rowPtr, colIndexes, AVal, n_row, v, result);
+        csr_spmv<<<blocks_per_grid, threads_per_block>>>(rowPtr, colIndexes, AVal, n_row, v, result);
         cudaDeviceSynchronize();
         TIMER_STOP(0);
         if (strcmp(argv[1], "test.mtx") == 0) checkCorrect(result, n_row);

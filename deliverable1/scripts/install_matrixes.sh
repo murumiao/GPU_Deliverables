@@ -4,6 +4,7 @@ rm -rf ./data
 mkdir -p ./data
 urls=(
     "https://suitesparse-collection-website.herokuapp.com/MM/SNAP/soc-sign-Slashdot081106.tar.gz"
+    "https://suitesparse-collection-website.herokuapp.com/MM/Bodendiek/CurlCurl_4.tar.gz"
 
 
     #undirected graph
