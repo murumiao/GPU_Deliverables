@@ -58,7 +58,7 @@ void readMatrixFile(char* filePath, int** rowPtr, int** colIndexes, dtype** valC
     fclose(fp);
 }
 
-__global__ void csr_spmv(int* rowPtr, int* colIndexes, dtype* AVal, int rowLen, dtype* v, dtype* result) {
+__global__ void csr_spmv_sequential(int* rowPtr, int* colIndexes, dtype* AVal, int rowLen, dtype* v, dtype* result) {
     int thread_id = blockIdx.x * blockDim.x + threadIdx.x;
     if (thread_id >= rowLen) {
         return;
@@ -68,36 +68,54 @@ __global__ void csr_spmv(int* rowPtr, int* colIndexes, dtype* AVal, int rowLen, 
     int end = rowPtr[thread_id + 1];
 
     for (int i = start; i < end; i++) {
-        dtype product = AVal[i] * v[colIndexes[i]];
-        result[thread_id] += product;
+        result[thread_id] += AVal[i] * v[colIndexes[i]];
     }
 }
 
-void checkCorrect(dtype* result, int n) {
-    if (!(result[0] == 3.3 && result[1] == 2.5 && result[2] == 3)) {
-        printf("Fail!\n");
-        for (int j = 0; j < n; j++) {
-            printf("%f,", result[j]);
-        }
-        printf("\n");
+__global__ void csr_spmv_stride(int* rowPtr, int* colIndexes, dtype* AVal, int rowLen, dtype* v, dtype* result) {
+    int thread_id = (blockIdx.x * blockDim.x + threadIdx.x) / warpSize;
+    // int total_threads = gridDim.x * blockDim.x;
+    if (thread_id >= rowLen) {
+        return;
+    }
+    int lane = threadIdx.x % warpSize;
+
+    int start = rowPtr[thread_id];
+    int end = rowPtr[thread_id + 1];
+
+    dtype sum = 0.0;
+    for (int i = start + lane; i < end; i += warpSize) {
+        sum += AVal[i] * v[colIndexes[i]];
+    }
+
+    // reduction
+    for (int offset = warpSize / 2; offset > 0; offset /= 2) {
+        sum += __shfl_down_sync(0xffffffff, sum, offset);
+    }
+
+    if (lane == 0) {
+        result[thread_id] = sum;
     }
 }
 
 int main(int argc, char* argv[]) {
-    printf("CSR\n");
-    if (argc != 2) {
-        fprintf(stderr, "Usage %s <path_to_matrix>\n", argv[0]);
+    if (argc != 3) {
+        fprintf(stderr, "Usage %s <path_to_matrix> <mode[0=seq,1=stride]>\n", argv[0]);
         exit(1);
     }
 
+    int mode = atoi(argv[2]);
     //* CSR storage
     int n_row = -1, n_col = -1, nnz = -1;
     int *rowPtr = NULL, *colIndexes = NULL;
     dtype* AVal = NULL;
 
-    printf("Loading matrix...\n");
     readMatrixFile(argv[1], &rowPtr, &colIndexes, &AVal, &n_row, &n_col, &nnz);
-    printf("Matrix loaded!\n");
+    if (mode == 0) {
+        print_starting_info("CSR GPU SEQUENTIAL", argv[1], TIMED_RUNS, WARMUP_RUNS);
+    } else {
+        print_starting_info("CSR GPU STRIDE", argv[1], TIMED_RUNS, WARMUP_RUNS);
+    }
 
     // Create dense vector
     dtype* v;
@@ -109,26 +127,44 @@ int main(int argc, char* argv[]) {
     dtype* result;
     cudaMallocManaged(&result, n_row * sizeof(dtype));
 
-    double timers[TIMED_RUNS];
+    double timer_arr[TIMED_RUNS], bandwidth_arr[TIMED_RUNS], gflops_arr[TIMED_RUNS];
 
-    int blocks_per_grid = 1024;
-    int threads_per_block = (n_row + blocks_per_grid - 1) / blocks_per_grid;
+    int threads_per_block = 256;
+    int blocks_per_grid = 4;
 
-    TIMER_DEF(0);
+    cudaEvent_t start, stop;
+    cudaEventCreate(&start);
+    cudaEventCreate(&stop);
     for (int i = 0; i < TOTAL_RUNS; i++) {
         cudaMemset(result, 0, n_row * sizeof(dtype));
-        TIMER_START(0);
-        csr_spmv<<<blocks_per_grid, threads_per_block>>>(rowPtr, colIndexes, AVal, n_row, v, result);
-        cudaDeviceSynchronize();
-        TIMER_STOP(0);
-        if (strcmp(argv[1], "test.mtx") == 0) checkCorrect(result, n_row);
-        if (i > WARMUP_RUNS) {
-            timers[i - WARMUP_RUNS] = TIMER_ELAPSED(0) / 1.e6;
-        }
-        printf("Run %d/%d done in %fs\n", i + 1, TOTAL_RUNS, TIMER_ELAPSED(0) / 1.e6);
-    }
 
-    printf("Arithmetic mean on %d iterations: %fs\n", TIMED_RUNS, arithmetic_mean(timers, TIMED_RUNS));
+        cudaEventRecord(start);
+        if (mode == 0) {
+            csr_spmv_sequential<<<blocks_per_grid, threads_per_block>>>(rowPtr, colIndexes, AVal, n_row, v, result);
+        } else {
+            csr_spmv_stride<<<blocks_per_grid, threads_per_block>>>(rowPtr, colIndexes, AVal, n_row, v, result);
+        }
+        cudaEventRecord(stop);
+
+        cudaEventSynchronize(stop);
+
+        float exec_time_ms;
+        cudaEventElapsedTime(&exec_time_ms, start, stop);
+        double exec_time_s = exec_time_ms / 1000.0;
+
+        double bandwidth = csr_calculate_bandwidthGBs(n_col, n_row, nnz, exec_time_s);
+        double gflop = calculate_gflop(nnz, exec_time_s);
+        if (i > WARMUP_RUNS) {
+            timer_arr[i - WARMUP_RUNS] = exec_time_s;
+            bandwidth_arr[i - WARMUP_RUNS] = bandwidth;
+            gflops_arr[i - WARMUP_RUNS] = gflop;
+        }
+        print_run_stat(i, exec_time_s, bandwidth, gflop);
+    }
+    cudaEventDestroy(start);
+    cudaEventDestroy(stop);
+
+    final_info_print(timer_arr, bandwidth_arr, gflops_arr, TIMED_RUNS, result, n_row);
     cudaFree(rowPtr);
     cudaFree(colIndexes);
     cudaFree(AVal);

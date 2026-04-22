@@ -11,11 +11,9 @@ void print_run_stat(int runid, double exec_time, double bandwidth, double gflops
 void final_info_print(double* timers, double* bandwidths, double* gflops, int amount_runs, double* results, int len_results);
 
 double coo_calculate_bandwidthGBs(int n_col, int n_row, int nnz, double time_s);
-double coo_calculate_gflop(int nnz, double time_s);
-
-
 double csr_calculate_bandwidthGBs(int n_col, int n_row, int nnz, double time_s);
-double csr_calculate_gflop(double bandwidth, double time_s);
+double calculate_gflop(int nnz, double time_s);
+
 #ifdef __cplusplus
 }
 #endif

@@ -11,7 +11,7 @@
 
 #define TIMED_RUNS TOTAL_RUNS - WARMUP_RUNS
 
-void readMatrixFile(char* filePath, int** ARow, int** ACol, dtype** AVal, int* n_row, int* n_col, int* n_value) {
+void readMatrixFile(char* filePath, int** ARow, int** ACol, dtype** AVal, int* n_row, int* n_col, int* nnz) {
     FILE* fp = fopen(filePath, "r");
     if (fp == NULL) {
         fprintf(stderr, "File %s not found", filePath);
@@ -24,16 +24,16 @@ void readMatrixFile(char* filePath, int** ARow, int** ACol, dtype** AVal, int* n
         if (buffer[0] == '%') continue;
         if (buffer[0] == ' ') continue;
         if (buffer[0] == '\n') continue;
-        if (*n_row == -1 || *n_col == -1 || *n_value == -1) {
+        if (*n_row == -1 || *n_col == -1 || *nnz == -1) {
             char* token = strtok(buffer, " ");
             *n_row = atoi(token);
             token = strtok(NULL, " ");
             *n_col = atoi(token);
             token = strtok(NULL, " ");
-            *n_value = atoi(token);
-            *ARow = malloc(*n_value * sizeof(int));
-            *ACol = malloc(*n_value * sizeof(int));
-            *AVal = malloc(*n_value * sizeof(dtype));
+            *nnz = atoi(token);
+            *ARow = malloc(*nnz * sizeof(int));
+            *ACol = malloc(*nnz * sizeof(int));
+            *AVal = malloc(*nnz * sizeof(dtype));
         } else {
             char* token = strtok(buffer, " ");
             int row = atoi(token) - 1;  // 1-based index
@@ -61,11 +61,11 @@ int main(int argc, char* argv[]) {
     }
 
     //* COO storage
-    int n_row = -1, n_col = -1, n_value = -1;
+    int n_row = -1, n_col = -1, nnz = -1;
     int *ARow = NULL, *ACol = NULL;
     dtype* Aval = NULL;
 
-    readMatrixFile(argv[1], &ARow, &ACol, &Aval, &n_row, &n_col, &n_value);
+    readMatrixFile(argv[1], &ARow, &ACol, &Aval, &n_row, &n_col, &nnz);
 
     print_starting_info("COO CPU", argv[1], TIMED_RUNS, WARMUP_RUNS);
     // Create dense vector
@@ -81,11 +81,11 @@ int main(int argc, char* argv[]) {
     for (int i = 0; i < TOTAL_RUNS; i++) {
         memset(result, 0, n_row * sizeof(dtype));
         TIMER_START(0);
-        coo_spmv_sequential(ARow, ACol, Aval, v, n_value, result);
+        coo_spmv_sequential(ARow, ACol, Aval, v, nnz, result);
         TIMER_STOP(0);
         double exec_time_s = TIMER_ELAPSED(0) / 1.e6;
-        double bandwidth = coo_calculate_bandwidthGBs(n_col, n_row, n_value, exec_time_s);
-        double gflop = coo_calculate_gflop(n_value, exec_time_s);
+        double bandwidth = coo_calculate_bandwidthGBs(n_col, n_row, nnz, exec_time_s);
+        double gflop = calculate_gflop(nnz, exec_time_s);
         if (i > WARMUP_RUNS) {
             timer_arr[i - WARMUP_RUNS] = exec_time_s;
             bandwidth_arr[i - WARMUP_RUNS] = bandwidth;

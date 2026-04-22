@@ -50,7 +50,7 @@ int main(int argc, char **argv) {
 
     for (int i = 0; i < nnz; ++i) {
         if (fscanf(fin, "%d %d %lf", &entries[i].row, &entries[i].col, &entries[i].val) != 3) {
-            fprintf(stderr, "Error reading entry at index %d.\n", i);
+            fprintf(stderr, "Error reading entry at index %d.\n%d %d %lf\n", i, entries[i].row, entries[i].col, entries[i].val);
             free(entries);
             return 1;
         }

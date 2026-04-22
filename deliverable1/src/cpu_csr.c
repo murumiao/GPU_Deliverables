@@ -57,21 +57,11 @@ void readMatrixFile(char* filePath, int** rowPtr, int** colIndexes, dtype** valC
     fclose(fp);
 }
 
-void csr_spmv(int* rowPtr, int* colIndexes, dtype* AVal, int rowLen, dtype* v, dtype* result) {
+void csr_spmv_sequential(int* rowPtr, int* colIndexes, dtype* AVal, int rowLen, dtype* v, dtype* result) {
     for (int i = 0; i < rowLen; i++) {
         for (int j = rowPtr[i]; j < rowPtr[i + 1]; j++) {
             result[i] += AVal[j] * v[colIndexes[j]];
         }
-    }
-}
-
-void checkCorrect(dtype* result, int n) {
-    if (!(result[0] == 3.3 && result[1] == 2.5 && result[2] == 3)) {
-        printf("Fail!\n");
-        for (int j = 0; j < n; j++) {
-            printf("%f,", result[j]);
-        }
-        printf("\n");
     }
 }
 
@@ -87,15 +77,9 @@ int main(int argc, char* argv[]) {
     int *rowPtr = NULL, *colIndexes = NULL;
     dtype* AVal = NULL;
 
-    printf("Loading matrix...\n");
     readMatrixFile(argv[1], &rowPtr, &colIndexes, &AVal, &n_row, &n_col, &nnz);
-    printf("Matrix loaded!\n");
 
-    // for (int i = 0; i < nnz; i++) {
-    //     printf("%d\t%f\n", colIndexes[i], AVal[i]);
-    // }
-    // printf("\n");
-
+    print_starting_info("CSR CPU", argv[1], TIMED_RUNS, WARMUP_RUNS);
     // Create dense vector
     dtype* v = malloc(n_col * sizeof(dtype));
     for (int i = 0; i < n_col; i++) {
@@ -103,19 +87,25 @@ int main(int argc, char* argv[]) {
     }
 
     dtype* result = malloc(n_row * sizeof(dtype));
-    double timers[TIMED_RUNS];
+    double timer_arr[TIMED_RUNS], bandwidth_arr[TIMED_RUNS], gflops_arr[TIMED_RUNS];
 
     TIMER_DEF(0);
     for (int i = 0; i < TOTAL_RUNS; i++) {
         memset(result, 0, n_row * sizeof(dtype));
         TIMER_START(0);
-        csr_spmv(rowPtr, colIndexes, AVal, n_row, v, result);
+        csr_spmv_sequential(rowPtr, colIndexes, AVal, n_row, v, result);
         TIMER_STOP(0);
-        if (strcmp(argv[1], "test.mtx") == 0) checkCorrect(result, n_row);
+        double exec_time_s = TIMER_ELAPSED(0) / 1.e6;
+        double bandwidth = csr_calculate_bandwidthGBs(n_col, n_row, nnz, exec_time_s);
+        double gflop = calculate_gflop(nnz, exec_time_s);
         if (i > WARMUP_RUNS) {
-            timers[i - WARMUP_RUNS] = TIMER_ELAPSED(0) / 1.e6;
+            timer_arr[i - WARMUP_RUNS] = exec_time_s;
+            bandwidth_arr[i - WARMUP_RUNS] = bandwidth;
+            gflops_arr[i - WARMUP_RUNS] = gflop;
         }
+        print_run_stat(i, exec_time_s, bandwidth, gflop);
     }
+    final_info_print(timer_arr, bandwidth_arr, gflops_arr, TIMED_RUNS, result, n_row);
     free(rowPtr);
     free(colIndexes);
     free(AVal);

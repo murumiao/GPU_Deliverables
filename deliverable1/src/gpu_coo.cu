@@ -11,7 +11,7 @@
 
 #define TIMED_RUNS TOTAL_RUNS - WARMUP_RUNS
 
-void readMatrixFile(char* filePath, int** ARow, int** ACol, dtype** AVal, int* n_row, int* n_col, int* n_value) {
+void readMatrixFile(char* filePath, int** ARow, int** ACol, dtype** AVal, int* n_row, int* n_col, int* nnz) {
     FILE* fp = fopen(filePath, "r");
     if (fp == NULL) {
         fprintf(stderr, "File %s not found", filePath);
@@ -23,16 +23,16 @@ void readMatrixFile(char* filePath, int** ARow, int** ACol, dtype** AVal, int* n
         if (buffer[0] == '%') continue;
         if (buffer[0] == ' ') continue;
         if (buffer[0] == '\n') continue;
-        if (*n_row == -1 || *n_col == -1 || *n_value == -1) {
+        if (*n_row == -1 || *n_col == -1 || *nnz == -1) {
             char* token = strtok(buffer, " ");
             *n_row = atoi(token);
             token = strtok(NULL, " ");
             *n_col = atoi(token);
             token = strtok(NULL, " ");
-            *n_value = atoi(token);
-            cudaMallocManaged(ARow, *n_value * sizeof(int));
-            cudaMallocManaged(ACol, *n_value * sizeof(int));
-            cudaMallocManaged(AVal, *n_value * sizeof(dtype));
+            *nnz = atoi(token);
+            cudaMallocManaged(ARow, *nnz * sizeof(int));
+            cudaMallocManaged(ACol, *nnz * sizeof(int));
+            cudaMallocManaged(AVal, *nnz * sizeof(dtype));
         } else {
             char* token = strtok(buffer, " ");
             int row = atoi(token) - 1;  // 1-based index
@@ -81,17 +81,17 @@ __global__ void coo_spmv_stride(int* ARow, int* ACol, dtype* AVal, dtype* v, int
 }
 int main(int argc, char* argv[]) {
     if (argc != 3) {
-        fprintf(stderr, "Usage %s <path_to_matrix> <mode[0=seq,X=stride]>\n", argv[0]);
+        fprintf(stderr, "Usage %s <path_to_matrix> <mode[0=seq,1=stride]>\n", argv[0]);
         exit(1);
     }
 
     int mode = atoi(argv[2]);
     //* COO storage
-    int n_row = -1, n_col = -1, n_value = -1;
+    int n_row = -1, n_col = -1, nnz = -1;
     int *ARow = NULL, *ACol = NULL;
     dtype* Aval = NULL;
 
-    readMatrixFile(argv[1], &ARow, &ACol, &Aval, &n_row, &n_col, &n_value);
+    readMatrixFile(argv[1], &ARow, &ACol, &Aval, &n_row, &n_col, &nnz);
     if (mode == 0) {
         print_starting_info("COO GPU SEQUENTIAL", argv[1], TIMED_RUNS, WARMUP_RUNS);
     } else {
@@ -105,21 +105,21 @@ int main(int argc, char* argv[]) {
     }
 
     dtype* result;
-    cudaMallocManaged(&result, n_value * sizeof(dtype));
+    cudaMallocManaged(&result, nnz * sizeof(dtype));
     double timer_arr[TIMED_RUNS], bandwidth_arr[TIMED_RUNS], gflops_arr[TIMED_RUNS];
 
     int threads_per_block = 256;
-    int blocks_per_grid = (n_value + threads_per_block - 1) / threads_per_block;
+    int blocks_per_grid = 4;
     cudaEvent_t start, stop;
+    cudaEventCreate(&start);
+    cudaEventCreate(&stop);
     for (int i = 0; i < TOTAL_RUNS; i++) {
         cudaMemset(result, 0, n_row * sizeof(dtype));
-        cudaEventCreate(&start);
-        cudaEventCreate(&stop);
         cudaEventRecord(start);
         if (mode == 0) {
-            coo_spmv_sequential<<<4, 256>>>(ARow, ACol, Aval, v, n_value, result);
+            coo_spmv_sequential<<<blocks_per_grid, threads_per_block>>>(ARow, ACol, Aval, v, nnz, result);
         } else {
-            coo_spmv_stride<<<blocks_per_grid, threads_per_block>>>(ARow, ACol, Aval, v, n_value, result);
+            coo_spmv_stride<<<blocks_per_grid, threads_per_block>>>(ARow, ACol, Aval, v, nnz, result);
         }
         cudaEventRecord(stop);
         cudaEventSynchronize(stop);
@@ -128,17 +128,17 @@ int main(int argc, char* argv[]) {
         cudaEventElapsedTime(&exec_time_ms, start, stop);
         double exec_time_s = exec_time_ms / 1000.0;
 
-        double bandwidth = coo_calculate_bandwidthGBs(n_col, n_row, n_value, exec_time_s);
-        double gflop = coo_calculate_gflop(n_value, exec_time_s);
+        double bandwidth = coo_calculate_bandwidthGBs(n_col, n_row, nnz, exec_time_s);
+        double gflop = calculate_gflop(nnz, exec_time_s);
         if (i > WARMUP_RUNS) {
             timer_arr[i - WARMUP_RUNS] = exec_time_s;
             bandwidth_arr[i - WARMUP_RUNS] = bandwidth;
             gflops_arr[i - WARMUP_RUNS] = gflop;
         }
         print_run_stat(i, exec_time_s, bandwidth, gflop);
-        cudaEventDestroy(start);
-        cudaEventDestroy(stop);
     }
+    cudaEventDestroy(start);
+    cudaEventDestroy(stop);
 
     final_info_print(timer_arr, bandwidth_arr, gflops_arr, TIMED_RUNS, result, n_row);
     cudaFree(ARow);

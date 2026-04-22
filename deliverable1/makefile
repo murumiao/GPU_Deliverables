@@ -19,7 +19,7 @@ OBJECTS = $(OBJ_FOLDER)/my_time_lib.o  $(OBJ_FOLDER)/spmv_utils.o
 #### COO ####
 ############# 
 CPU_NAME_COO=cpu_coo
-GPU_NAME_COO=gpu_coo_sequential
+GPU_NAME_COO=gpu_coo
 
 CPU_COO_BIN=$(BIN_FOLDER)/$(CPU_NAME_COO)
 GPU_COO_BIN=$(BIN_FOLDER)/$(GPU_NAME_COO)
@@ -41,7 +41,7 @@ $(GPU_COO_BIN): $(GPU_COO_SRC) $(OBJECTS)
 ############# 
 
 CPU_NAME_CSR=cpu_csr
-GPU_NAME_CSR=gpu_csr_sequential
+GPU_NAME_CSR=gpu_csr
 
 CPU_CSR_BIN=$(BIN_FOLDER)/$(CPU_NAME_CSR)
 GPU_CSR_BIN=$(BIN_FOLDER)/$(GPU_NAME_CSR)

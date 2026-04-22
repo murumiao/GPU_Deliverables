@@ -53,23 +53,34 @@ double coo_calculate_bandwidthGBs(int n_col, int n_row, int nnz, double time_s) 
         return INFINITY;
     }
 
-    long long int byte_read_matrix = nnz * 2 * sizeof(int) + nnz * sizeof(dtype);
-    long long int byte_read_vector = n_col * sizeof(dtype);
+    long long int byte_read_matrix = 2 * nnz * sizeof(int) + nnz * sizeof(dtype);
+    long long int byte_read_vector = n_col * sizeof(dtype);  // assuming worst cache
     long long int byte_read = byte_read_matrix + byte_read_vector;
 
     long long int byte_written_to_result = n_row * sizeof(dtype);
-    long long int byte_written = byte_written_to_result;
 
-    long double gigabyte_used = (byte_read + byte_written) / 1.e9;
+    long double gigabyte_used = (byte_read + byte_written_to_result) / 1.e9;
     return gigabyte_used / time_s;
 }
 
-double coo_calculate_gflop(int nnz, double time_s) {
-    // GFLOP=2*operations / time_s
-    return (2 * nnz / 1.e9) / time_s;
+double csr_calculate_bandwidthGBs(int n_col, int n_row, int nnz, double time_s) {
+    // effective bandwith = ((Byte_read+Byte_written)/10^9)/time
+    if (time_s == 0.0) {
+        return INFINITY;
+    }
+    long long int byte_read_matrix = nnz * sizeof(int) + nnz * sizeof(dtype);
+    long long int byte_read_row_ptr = (n_row + 1) * sizeof(int);
+    long long int byte_read_vector = n_col * sizeof(dtype);  // assuming worst cache
+
+    long long int bytes_read = byte_read_matrix + byte_read_row_ptr + byte_read_vector;
+
+    long long int byte_written_to_result = n_row * sizeof(dtype);
+    long double gigabyte_used = bytes_read + byte_written_to_result / 1.e9;
+
+    return gigabyte_used / time_s;
 }
 
-double csr_calculate_bandwidthGBs(int n_col, int n_row, int nnz, double time_s) {
-}
-double csr_calculate_gflop(double bandwidth, double time_s) {
+double calculate_gflop(int nnz, double time_s) {
+    // GFLOP=2*operations / time_s
+    return (2 * nnz / 1.e9) / time_s;
 }
