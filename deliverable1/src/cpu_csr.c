@@ -57,7 +57,7 @@ void readMatrixFile(char* filePath, int** rowPtr, int** colIndexes, dtype** valC
     fclose(fp);
 }
 
-void csr_spmv_sequential(int* rowPtr, int* colIndexes, dtype* AVal, int rowLen, dtype* v, dtype* result) {
+void csr_globmem_spmv_sequential(int* rowPtr, int* colIndexes, dtype* AVal, int rowLen, dtype* v, dtype* result) {
     for (int i = 0; i < rowLen; i++) {
         for (int j = rowPtr[i]; j < rowPtr[i + 1]; j++) {
             result[i] += AVal[j] * v[colIndexes[j]];
@@ -93,7 +93,7 @@ int main(int argc, char* argv[]) {
     for (int i = 0; i < TOTAL_RUNS; i++) {
         memset(result, 0, n_row * sizeof(dtype));
         TIMER_START(0);
-        csr_spmv_sequential(rowPtr, colIndexes, AVal, n_row, v, result);
+        csr_globmem_spmv_sequential(rowPtr, colIndexes, AVal, n_row, v, result);
         TIMER_STOP(0);
         double exec_time_s = TIMER_ELAPSED(0) / 1.e6;
         double bandwidth = csr_calculate_bandwidthGBs(n_col, n_row, nnz, exec_time_s);

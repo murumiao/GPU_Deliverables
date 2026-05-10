@@ -4,11 +4,11 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
-#define dtype double
+#define dtype float
 
 void print_starting_info(const char* type, const char* matrix_name, int amount_runs, int amount_warmpup);
 void print_run_stat(int runid, double exec_time, double bandwidth, double gflops);
-void final_info_print(double* timers, double* bandwidths, double* gflops, int amount_runs, double* results, int len_results);
+void final_info_print(double* timers, double* bandwidths, double* gflops, int amount_runs, dtype* results, int len_results);
 
 double coo_calculate_bandwidthGBs(int n_col, int n_row, int nnz, double time_s);
 double csr_calculate_bandwidthGBs(int n_col, int n_row, int nnz, double time_s);

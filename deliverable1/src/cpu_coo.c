@@ -49,7 +49,7 @@ void readMatrixFile(char* filePath, int** ARow, int** ACol, dtype** AVal, int* n
     }
     fclose(fp);
 }
-void coo_spmv_sequential(int* ARow, int* ACol, dtype* AVal, dtype* v, int n, dtype* result) {
+void coo_globmem_spmv_seq(int* ARow, int* ACol, dtype* AVal, dtype* v, int n, dtype* result) {
     for (int i = 0; i < n; i++) {
         result[ARow[i]] += AVal[i] * v[ACol[i]];
     }
@@ -81,7 +81,7 @@ int main(int argc, char* argv[]) {
     for (int i = 0; i < TOTAL_RUNS; i++) {
         memset(result, 0, n_row * sizeof(dtype));
         TIMER_START(0);
-        coo_spmv_sequential(ARow, ACol, Aval, v, nnz, result);
+        coo_globmem_spmv_seq(ARow, ACol, Aval, v, nnz, result);
         TIMER_STOP(0);
         double exec_time_s = TIMER_ELAPSED(0) / 1.e6;
         double bandwidth = coo_calculate_bandwidthGBs(n_col, n_row, nnz, exec_time_s);

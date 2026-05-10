@@ -7,7 +7,7 @@
 
 #define MAX_STRING 100
 #define TOTAL_RUNS 10
-#define WARMUP_RUNS 2
+#define WARMUP_RUNS 1
 
 #define TIMED_RUNS TOTAL_RUNS - WARMUP_RUNS
 
@@ -58,7 +58,7 @@ void readMatrixFile(char* filePath, int** rowPtr, int** colIndexes, dtype** valC
     fclose(fp);
 }
 
-__global__ void csr_spmv_sequential(int* rowPtr, int* colIndexes, dtype* AVal, int rowLen, dtype* v, dtype* result) {
+__global__ void csr_globmem_spmv_sequential(int* rowPtr, int* colIndexes, dtype* AVal, int rowLen, dtype* v, dtype* result) {
     int thread_id = blockIdx.x * blockDim.x + threadIdx.x;
     if (thread_id >= rowLen) {
         return;
@@ -72,7 +72,7 @@ __global__ void csr_spmv_sequential(int* rowPtr, int* colIndexes, dtype* AVal, i
     }
 }
 
-__global__ void csr_spmv_stride(int* rowPtr, int* colIndexes, dtype* AVal, int rowLen, dtype* v, dtype* result) {
+__global__ void csr_globmem_spmv_stride(int* rowPtr, int* colIndexes, dtype* AVal, int rowLen, dtype* v, dtype* result) {
     int thread_id = (blockIdx.x * blockDim.x + threadIdx.x) / warpSize;
     // int total_threads = gridDim.x * blockDim.x;
     if (thread_id >= rowLen) {
@@ -97,6 +97,54 @@ __global__ void csr_spmv_stride(int* rowPtr, int* colIndexes, dtype* AVal, int r
         result[thread_id] = sum;
     }
 }
+__global__ void csr_sharmem_spmv_stride(int* rowPtr, int* colIndexes, dtype* AVal, int rowLen, dtype* v, dtype* result) {
+    extern __shared__ dtype vals[];
+
+    int thread_id = blockDim.x * blockIdx.x + threadIdx.x;
+    int warp_id = thread_id / 32;
+    int lane = thread_id & (32 - 1);
+    int row = warp_id;
+    vals[threadIdx.x] = 0.0;
+    __syncthreads();
+
+    if (row < rowLen) {
+        int row_start = rowPtr[row];
+        int row_end = rowPtr[row + 1];
+        vals[threadIdx.x] = 0;
+        for (int jj = row_start + lane; jj < row_end; jj += 32)
+            vals[threadIdx.x] += AVal[jj] * v[colIndexes[jj]];
+    }
+    __syncthreads();
+    if (lane < 16 && threadIdx.x + 16 < blockDim.x) {
+        vals[threadIdx.x] += vals[threadIdx.x + 16];
+    }
+    __syncthreads();
+
+    if (lane < 8 && threadIdx.x + 8 < blockDim.x) {
+        vals[threadIdx.x] += vals[threadIdx.x + 8];
+    }
+    __syncthreads();
+
+    if (lane < 4 && threadIdx.x + 4 < blockDim.x) {
+        vals[threadIdx.x] += vals[threadIdx.x + 4];
+    }
+    __syncthreads();
+
+    if (lane < 2 && threadIdx.x + 2 < blockDim.x) {
+        vals[threadIdx.x] += vals[threadIdx.x + 2];
+    }
+    __syncthreads();
+
+    if (lane < 1 && threadIdx.x + 1 < blockDim.x) {
+        vals[threadIdx.x] += vals[threadIdx.x + 1];
+    }
+    __syncthreads();
+
+    // Write result to global memory
+    if (lane == 0 && row < rowLen) {
+        atomicAdd(&result[row], vals[threadIdx.x]);
+    }
+}
 
 int main(int argc, char* argv[]) {
     if (argc != 3) {
@@ -112,9 +160,14 @@ int main(int argc, char* argv[]) {
 
     readMatrixFile(argv[1], &rowPtr, &colIndexes, &AVal, &n_row, &n_col, &nnz);
     if (mode == 0) {
-        print_starting_info("CSR GPU SEQUENTIAL", argv[1], TIMED_RUNS, WARMUP_RUNS);
+        print_starting_info("CSR GPU SEQUENTIAL GLOBAL MEM", argv[1], TIMED_RUNS, WARMUP_RUNS);
+    } else if (mode == 1) {
+        print_starting_info("CSR GPU STRIDE GLOBAL MEM", argv[1], TIMED_RUNS, WARMUP_RUNS);
+    } else if (mode == 2) {
+        print_starting_info("CSR GPU STRIDE SHARED MEM", argv[1], TIMED_RUNS, WARMUP_RUNS);
     } else {
-        print_starting_info("CSR GPU STRIDE", argv[1], TIMED_RUNS, WARMUP_RUNS);
+        fprintf(stderr, "Wrong mode\n");
+        exit(1);
     }
 
     // Create dense vector
@@ -131,6 +184,8 @@ int main(int argc, char* argv[]) {
 
     int threads_per_block = 256;
     int blocks_per_grid = 4;
+    // int blocks_per_grid = (n_row + (threads_per_block / 32) - 1) / (threads_per_block / 32);
+    int shared_mem_size = 1024;
 
     cudaEvent_t start, stop;
     cudaEventCreate(&start);
@@ -140,9 +195,11 @@ int main(int argc, char* argv[]) {
 
         cudaEventRecord(start);
         if (mode == 0) {
-            csr_spmv_sequential<<<blocks_per_grid, threads_per_block>>>(rowPtr, colIndexes, AVal, n_row, v, result);
-        } else {
-            csr_spmv_stride<<<blocks_per_grid, threads_per_block>>>(rowPtr, colIndexes, AVal, n_row, v, result);
+            csr_globmem_spmv_sequential<<<blocks_per_grid, threads_per_block>>>(rowPtr, colIndexes, AVal, n_row, v, result);
+        } else if (mode == 1) {
+            csr_globmem_spmv_stride<<<blocks_per_grid, threads_per_block>>>(rowPtr, colIndexes, AVal, n_row, v, result);
+        } else if (mode == 2) {
+            csr_sharmem_spmv_stride<<<blocks_per_grid, threads_per_block, shared_mem_size>>>(rowPtr, colIndexes, AVal, n_row, v, result);
         }
         cudaEventRecord(stop);
 

@@ -7,7 +7,7 @@
 
 #include "../include/my_time_lib.h"
 
-void print_nnz_head_spmv(double* result_arr, int len_result, int n) {
+void print_nnz_head_spmv(dtype* result_arr, int len_result, int n) {
     printf("First %d nnz values result\t", (int)fmin(n, len_result));
     double toPrint[n];
     int counter = 0;
@@ -39,7 +39,7 @@ void print_run_stat(int runid, double exec_time, double bandwidth, double gflops
     printf("Estimated GFLOPS\t\t%f\n", gflops);
 }
 
-void final_info_print(double* timers, double* bandwidths, double* gflops, int amount_runs, double* results, int len_results) {
+void final_info_print(double* timers, double* bandwidths, double* gflops, int amount_runs, dtype* results, int len_results) {
     printf("========STATS========\n");
     printf("Arithmetic mean TIME \t\t%f s\n", arithmetic_mean(timers, amount_runs));
     printf("Arithmetic mean BANDWIDTH\t%f GB/s\n", arithmetic_mean(bandwidths, amount_runs));
