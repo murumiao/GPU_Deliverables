@@ -6,10 +6,7 @@
 #include "../include/spmv_utils.h"
 
 #define MAX_STRING 100
-#define TOTAL_RUNS 10
-#define WARMUP_RUNS 2
 
-#define TIMED_RUNS TOTAL_RUNS - WARMUP_RUNS
 
 void readMatrixFile(char* filePath, int** ARow, int** ACol, dtype** AVal, int* n_row, int* n_col, int* nnz) {
     FILE* fp = fopen(filePath, "r");

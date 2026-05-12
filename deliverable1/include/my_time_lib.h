@@ -4,6 +4,10 @@
 #include <math.h>
 #include <sys/time.h>
 
+#define TOTAL_RUNS 52
+#define WARMUP_RUNS 1
+#define TIMED_RUNS TOTAL_RUNS - WARMUP_RUNS
+
 #define STR(s) #s
 #define XSTR(s) STR(s)
 
@@ -20,7 +24,6 @@
         sleep(0.5);                                                           \
         MPI_Barrier(MPI_COMM_WORLD);                                          \
     } while (0);
-
 
 #ifdef __cplusplus
 extern "C" {

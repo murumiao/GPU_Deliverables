@@ -34,16 +34,16 @@ void print_starting_info(const char* type, const char* matrix_name, int amount_r
 }
 void print_run_stat(int runid, double exec_time, double bandwidth, double gflops) {
     printf("========Run #%d========\n", runid + 1);
-    printf("Execution TIME (s)\t\t%f\n", exec_time);
-    printf("Estimated BANDWIDTH(GB/s)\t%f\n", bandwidth);
-    printf("Estimated GFLOPS\t\t%f\n", gflops);
+    printf("Execution TIME (s)\t\t!%f\n", exec_time);
+    printf("Estimated BANDWIDTH(GB/s)\t!%f\n", bandwidth);
+    printf("Estimated GFLOPS\t\t!%f\n", gflops);
 }
 
 void final_info_print(double* timers, double* bandwidths, double* gflops, int amount_runs, dtype* results, int len_results) {
     printf("========STATS========\n");
-    printf("Arithmetic mean TIME \t\t%f s\n", arithmetic_mean(timers, amount_runs));
-    printf("Arithmetic mean BANDWIDTH\t%f GB/s\n", arithmetic_mean(bandwidths, amount_runs));
-    printf("Arithmetic mean FLOPS\t\t%f GFLOPS\n", arithmetic_mean(gflops, amount_runs));
+    printf("Arithmetic mean TIME \t\t!%f s\n", arithmetic_mean(timers, amount_runs));
+    printf("Arithmetic mean BANDWIDTH\t!%f GB/s\n", arithmetic_mean(bandwidths, amount_runs));
+    printf("Arithmetic mean FLOPS\t\t!%f GFLOPS\n", arithmetic_mean(gflops, amount_runs));
     print_nnz_head_spmv(results, len_results, 5);
 }
 
