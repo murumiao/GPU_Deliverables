@@ -22,4 +22,4 @@ for url in "${urls[@]}"; do
     rm -rf "$tmpdir"
 done
 
-./sort_matrixes.sh
+./scripts/sort_matrixes.sh
