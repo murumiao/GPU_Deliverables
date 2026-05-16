@@ -75,7 +75,7 @@ double csr_calculate_bandwidthGBs(int n_col, int n_row, int nnz, double time_s) 
     long long int bytes_read = byte_read_matrix + byte_read_row_ptr + byte_read_vector;
 
     long long int byte_written_to_result = n_row * sizeof(dtype);
-    long double gigabyte_used = bytes_read + byte_written_to_result / 1.e9;
+    long double gigabyte_used = (bytes_read + byte_written_to_result) / 1.e9;
 
     return gigabyte_used / time_s;
 }

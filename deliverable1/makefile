@@ -2,11 +2,23 @@ CC=gcc
 NVCC=nvcc
 GPU_ARCH = --gpu-architecture=sm_80
 
-CPU_FLAGS=-Wall
-GPU_FLAGS=--compiler-options -Wall
+CPU_FLAGS=-Wall -O3
+GPU_FLAGS=--compiler-options -Wall,-O3
 LIBS=
 INCLUDES=-I./include
 LIB_FLAGS=-lm
+
+# GPU Optimization Flags
+GPU_OPT_FLAGS = \
+	-O3 \
+	--use_fast_math \
+	-Xptxas -O3 \
+	-Xptxas -v \
+	--prec-div=false \
+	--prec-sqrt=false \
+	--ftz=true \
+	--fmad=true \
+	-lineinfo
 
 OBJ_FOLDER := obj
 SRC_FOLDER := src
@@ -33,7 +45,7 @@ $(CPU_COO_BIN): $(CPU_COO_SRC) $(OBJECTS)
 
 $(GPU_COO_BIN): $(GPU_COO_SRC) $(OBJECTS)
 	@mkdir -p $(BIN_FOLDER)
-	@$(NVCC) $(GPU_FLAGS) $^ -o $@ $(LIBS) $(INCLUDES) $(LIB_FLAGS) $(GPU_ARCH)
+	@$(NVCC) $(GPU_FLAGS) $(GPU_OPT_FLAGS) $^ -o $@ $(LIBS) $(INCLUDES) $(LIB_FLAGS) $(GPU_ARCH)
 
 
 #############
@@ -55,10 +67,7 @@ $(CPU_CSR_BIN): $(CPU_CSR_SRC) $(OBJECTS)
 
 $(GPU_CSR_BIN): $(GPU_CSR_SRC) $(OBJECTS)
 	@mkdir -p $(BIN_FOLDER)
-	@$(NVCC) $(GPU_FLAGS) $^ -o $@ $(INCLUDES) $(LIB_FLAGS) $(GPU_ARCH)
-
-
-
+	@$(NVCC) $(GPU_FLAGS) $(GPU_OPT_FLAGS) $^ -o $@ $(INCLUDES) $(LIB_FLAGS) $(GPU_ARCH)
 
 
 #################
@@ -71,8 +80,8 @@ clean:
 
 $(OBJ_FOLDER)/my_time_lib.o: $(SRC_FOLDER)/../lib/my_time_lib.c $(OBJ_FOLDER)/spmv_utils.o
 	@mkdir -p $(OBJ_FOLDER)
-	@$(CC) -c $(SRC_FOLDER)/../lib/my_time_lib.c -o $@ $(INCLUDES) $(LIB_FLAGS)
-	
+	@$(CC) -c $(CPU_FLAGS) $(SRC_FOLDER)/../lib/my_time_lib.c -o $@ $(INCLUDES) $(LIB_FLAGS)
+    
 $(OBJ_FOLDER)/spmv_utils.o: ./lib/spmv_utils.c ./include/spmv_utils.h
 	@mkdir -p $(OBJ_FOLDER)
-	@$(CC) -c ./lib/spmv_utils.c -o $@ $(INCLUDES) $(LIB_FLAGS)
+	@$(CC) -c $(CPU_FLAGS) ./lib/spmv_utils.c -o $@ $(INCLUDES) $(LIB_FLAGS)
