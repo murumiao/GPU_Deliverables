@@ -1,4 +1,4 @@
-CC=gcc
+CC=mpicc
 NVCC=nvcc
 GPU_ARCH = --gpu-architecture=sm_80
 
@@ -6,7 +6,7 @@ CPU_FLAGS=-Wall -O3
 GPU_FLAGS=--compiler-options -Wall,-O3
 LIBS=
 INCLUDES=-I./include
-LIB_FLAGS=-lm
+LIB_FLAGS=-lm -lnvidia-ml -lmpi
 
 # GPU Optimization Flags
 GPU_OPT_FLAGS = \

@@ -1,0 +1,4 @@
+NUMBER_PROCESSES=3
+PATH = "tmp"
+
+mpiexec -n $NUMBER_PROCESSES $PATH

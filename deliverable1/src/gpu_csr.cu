@@ -151,30 +151,6 @@ __global__ void csr_sharmem_spmv_stride(int* rowPtr, int* colIndexes, dtype* AVa
     }
 }
 
-// load balance
-__global__ void csr_warp_per_row_dynamic(int* rowPtr, int* colIndexes, dtype* AVal, int rowLen, dtype* v, dtype* result) {
-    // int warp_id = blockIdx.x * blockDim.x / 32 + threadIdx.x / 32;
-    // int lane = threadIdx.x & 31;
-
-    // if (warp_id >= rowLen) return;
-
-    // int row_start = rowPtr[warp_id];
-    // int row_end = rowPtr[warp_id + 1];
-    // dtype sum = 0.0;
-
-    // for (int i = row_start + lane; i < row_end; i += 32) {
-    //     sum += AVal[i] * v[colIndexes[i]];
-    // }
-
-    // // Warp shuffle reduction
-    // for (int offset = 16; offset > 0; offset >>= 1) {
-    //     sum += __shfl_down_sync(0xffffffff, sum, offset);
-    // }
-
-    // if (lane == 0) {
-    //     result[warp_id] = sum;
-    // }
-}
 
 // coalesced and shared (less bank conflicts)
 __global__ void csr_sharmem_coalesced(int* rowPtr, int* colIndexes, dtype* AVal, int rowLen, dtype* v, dtype* result) {
@@ -219,8 +195,8 @@ __global__ void csr_sharmem_coalesced(int* rowPtr, int* colIndexes, dtype* AVal,
     }
 }
 int main(int argc, char* argv[]) {
-    if (argc != 6) {
-        fprintf(stderr, "Usage %s <path_to_matrix> <mode> <n_blocks> <n_threads_per_block> <shared_mem_size>\n", argv[0]);
+    if (argc != 5) {
+        fprintf(stderr, "Usage %s <path_to_matrix> <mode[0,1,2,3]> <n_threads_per_block> <shared_mem_size>\n", argv[0]);
         exit(1);
     }
 
@@ -231,12 +207,14 @@ int main(int argc, char* argv[]) {
     printf("deviceCount = %d\n", deviceCount);
 
     int mode = atoi(argv[2]);
-    int threads_per_block = atoi(argv[4]);
-    int shared_mem_size = atoi(argv[5]);
+    int threads_per_block = atoi(argv[3]);
+    int shared_mem_size = atoi(argv[4]);
     //* CSR storage
     int n_row = -1, n_col = -1, nnz = -1;
     int *rowPtr = NULL, *colIndexes = NULL;
     dtype* AVal = NULL;
+
+    int blocks_per_grid = (n_row + threads_per_block - 1) / threads_per_block;
 
     readMatrixFile(argv[1], &rowPtr, &colIndexes, &AVal, &n_row, &n_col, &nnz);
 
@@ -247,11 +225,9 @@ int main(int argc, char* argv[]) {
     } else if (mode == 1) {
         print_starting_info("CSR GPU STRIDE GLOBAL MEM", argv[1], TIMED_RUNS, WARMUP_RUNS, blocks_per_grid, threads_per_block, -1);
     } else if (mode == 2) {
-        print_starting_info("CSR GPU STRIDE SHARED MEM", argv[1], TIMED_RUNS, WARMUP_RUNS, blocks_per_grid, threads_per_block, shared_mem_size);
-    } else if (mode == 3) {  // skipped
-        print_starting_info("CSR GPU GLOBMEM WARP-PER-ROW DYNAMIC", argv[1], TIMED_RUNS, WARMUP_RUNS, blocks_per_grid, threads_per_block, -1);
-    } else if (mode == 4) {
-        print_starting_info("CSR GPU SHARED MEM COALESCED", argv[1], TIMED_RUNS, WARMUP_RUNS, blocks_per_grid, threads_per_block, shared_mem_size);
+        print_starting_info("CSR GPU STRIDE SHARED MEM", argv[1], TIMED_RUNS, WARMUP_RUNS);
+    }  else if (mode == 3) {
+        print_starting_info("CSR GPU SHARED MEM COALESCED", argv[1], TIMED_RUNS, WARMUP_RUNS);
     } else {
         fprintf(stderr, "Wrong mode\n");
         exit(1);
@@ -283,8 +259,6 @@ int main(int argc, char* argv[]) {
         } else if (mode == 2) {
             csr_sharmem_spmv_stride<<<blocks_per_grid, threads_per_block, shared_mem_size>>>(rowPtr, colIndexes, AVal, n_row, v, result);
         } else if (mode == 3) {
-            csr_warp_per_row_dynamic<<<blocks_per_grid, threads_per_block>>>(rowPtr, colIndexes, AVal, n_row, v, result);
-        } else if (mode == 4) {
             csr_sharmem_coalesced<<<blocks_per_grid, threads_per_block, shared_mem_size>>>(rowPtr, colIndexes, AVal, n_row, v, result);
         }
         CUDA_CHECK(cudaGetLastError());
