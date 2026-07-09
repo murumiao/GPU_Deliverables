@@ -64,7 +64,7 @@ int main(int argc, char* argv[]) {
 
     readMatrixFile(argv[1], &ARow, &ACol, &Aval, &n_row, &n_col, &nnz);
 
-    print_starting_info("COO CPU", argv[1], TIMED_RUNS, WARMUP_RUNS);
+    print_starting_info("COO CPU", argv[1], TIMED_RUNS, WARMUP_RUNS,-1,-1,-1);
     // Create dense vector
     dtype* v = malloc(n_col * sizeof(dtype));
     for (int i = 0; i < n_col; i++) {

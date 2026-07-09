@@ -1,14 +1,15 @@
 #!/bin/bash
 
 # Path to your sort_mtx executable
-SORT_BIN=./scripts/sort
+SORT_BIN=./GPU_Deliverables/deliverable1/scripts/sort
 
 # Folder containing .mtx files
-DATA_DIR=data
+DATA_DIR=./data
+
 
 # Check if executable exists
 if [ ! -x "$SORT_BIN" ]; then
-    gcc -O3 -march=native -o ./scripts/sort ./scripts/sort.c
+    gcc -O3 -march=native -o ./GPU_Deliverables/deliverable1/scripts/sort ./GPU_Deliverables/deliverable1/scripts/sort.c
 fi
 
 # Process each .mtx file

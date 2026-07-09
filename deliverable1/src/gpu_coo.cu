@@ -88,9 +88,9 @@ int main(int argc, char* argv[]) {
     int blocks_per_grid = atoi(argv[3]);
     int threads_per_block = atoi(argv[4]);
     if (mode == 0) {
-        print_starting_info("COO GPU SEQUENTIAL GLOBAL MEM", argv[1], TIMED_RUNS, WARMUP_RUNS);
+        print_starting_info("COO GPU SEQUENTIAL GLOBAL MEM", argv[1], TIMED_RUNS, WARMUP_RUNS, blocks_per_grid, threads_per_block, -1);
     } else if (mode == 1) {
-        print_starting_info("COO GPU STRIDE GLOBAL MEM", argv[1], TIMED_RUNS, WARMUP_RUNS);
+        print_starting_info("COO GPU STRIDE GLOBAL MEM", argv[1], TIMED_RUNS, WARMUP_RUNS, blocks_per_grid, threads_per_block, -1);
     } else {
         fprintf(stderr, "Mode not found\n");
         exit(1);

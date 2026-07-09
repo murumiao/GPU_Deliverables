@@ -7,6 +7,16 @@
 
 #define MAX_STRING 100
 
+#define CUDA_CHECK(call)                                          \
+    do {                                                          \
+        cudaError_t err = (call);                                 \
+        if (err != cudaSuccess) {                                 \
+            fprintf(stderr, "CUDA error at %s:%d -> %s\n",        \
+                    __FILE__, __LINE__, cudaGetErrorString(err)); \
+            exit(EXIT_FAILURE);                                   \
+        }                                                         \
+    } while (0)
+
 void readMatrixFile(char* filePath, int** rowPtr, int** colIndexes, dtype** valCSR, int* n_row, int* n_col, int* nnz) {
     FILE* fp = fopen(filePath, "r");
     if (fp == NULL) {
@@ -27,10 +37,9 @@ void readMatrixFile(char* filePath, int** rowPtr, int** colIndexes, dtype** valC
             *n_col = atoi(token);
             token = strtok(NULL, " ");
             *nnz = atoi(token);
-
-            cudaMallocManaged(rowPtr, (*n_row + 1) * sizeof(int));
-            cudaMallocManaged(colIndexes, *nnz * sizeof(int));
-            cudaMallocManaged(valCSR, *nnz * sizeof(dtype));
+            CUDA_CHECK(cudaMallocManaged(rowPtr, (*n_row + 1) * sizeof(int)));
+            CUDA_CHECK(cudaMallocManaged(colIndexes, *nnz * sizeof(int)));
+            CUDA_CHECK(cudaMallocManaged(valCSR, *nnz * sizeof(dtype)));
         } else {
             char* token = strtok(buffer, " ");
             int row = atoi(token) - 1;  // 1-based index
@@ -191,6 +200,12 @@ int main(int argc, char* argv[]) {
         exit(1);
     }
 
+    int deviceCount = 0;
+    cudaError_t err = cudaGetDeviceCount(&deviceCount);
+
+    printf("cudaGetDeviceCount: %s\n", cudaGetErrorString(err));
+    printf("deviceCount = %d\n", deviceCount);
+
     int mode = atoi(argv[2]);
     int threads_per_block = atoi(argv[3]);
     int shared_mem_size = atoi(argv[4]);
@@ -202,10 +217,13 @@ int main(int argc, char* argv[]) {
     int blocks_per_grid = (n_row + threads_per_block - 1) / threads_per_block;
 
     readMatrixFile(argv[1], &rowPtr, &colIndexes, &AVal, &n_row, &n_col, &nnz);
+
+    int blocks_per_grid = (n_row + threads_per_block - 1) / threads_per_block;
+    ;
     if (mode == 0) {
-        print_starting_info("CSR GPU SEQUENTIAL GLOBAL MEM", argv[1], TIMED_RUNS, WARMUP_RUNS);
+        print_starting_info("CSR GPU SEQUENTIAL GLOBAL MEM", argv[1], TIMED_RUNS, WARMUP_RUNS, blocks_per_grid, threads_per_block, -1);
     } else if (mode == 1) {
-        print_starting_info("CSR GPU STRIDE GLOBAL MEM", argv[1], TIMED_RUNS, WARMUP_RUNS);
+        print_starting_info("CSR GPU STRIDE GLOBAL MEM", argv[1], TIMED_RUNS, WARMUP_RUNS, blocks_per_grid, threads_per_block, -1);
     } else if (mode == 2) {
         print_starting_info("CSR GPU STRIDE SHARED MEM", argv[1], TIMED_RUNS, WARMUP_RUNS);
     }  else if (mode == 3) {
@@ -217,23 +235,23 @@ int main(int argc, char* argv[]) {
 
     // Create dense vector
     dtype* v;
-    cudaMallocManaged(&v, n_col * sizeof(dtype));
+    CUDA_CHECK(cudaMallocManaged(&v, n_col * sizeof(dtype)));
     for (int i = 0; i < n_col; i++) {
         v[i] = 1.0;
     }
 
     dtype* result;
-    cudaMallocManaged(&result, n_row * sizeof(dtype));
+    CUDA_CHECK(cudaMallocManaged(&result, n_row * sizeof(dtype)));
 
     double timer_arr[TIMED_RUNS], bandwidth_arr[TIMED_RUNS], gflops_arr[TIMED_RUNS];
 
     cudaEvent_t start, stop;
-    cudaEventCreate(&start);
-    cudaEventCreate(&stop);
+    CUDA_CHECK(cudaEventCreate(&start));
+    CUDA_CHECK(cudaEventCreate(&stop));
     for (int i = 0; i < TOTAL_RUNS; i++) {
-        cudaMemset(result, 0, n_row * sizeof(dtype));
+        CUDA_CHECK(cudaMemset(result, 0, n_row * sizeof(dtype)));
 
-        cudaEventRecord(start);
+        CUDA_CHECK(cudaEventRecord(start));
         if (mode == 0) {
             csr_globmem_spmv_sequential<<<blocks_per_grid, threads_per_block>>>(rowPtr, colIndexes, AVal, n_row, v, result);
         } else if (mode == 1) {
@@ -243,30 +261,32 @@ int main(int argc, char* argv[]) {
         } else if (mode == 3) {
             csr_sharmem_coalesced<<<blocks_per_grid, threads_per_block, shared_mem_size>>>(rowPtr, colIndexes, AVal, n_row, v, result);
         }
-        cudaEventRecord(stop);
+        CUDA_CHECK(cudaGetLastError());
+        CUDA_CHECK(cudaDeviceSynchronize());
+        CUDA_CHECK(cudaEventRecord(stop));
 
-        cudaEventSynchronize(stop);
+        CUDA_CHECK(cudaEventSynchronize(stop));
 
         float exec_time_ms;
-        cudaEventElapsedTime(&exec_time_ms, start, stop);
+        CUDA_CHECK(cudaEventElapsedTime(&exec_time_ms, start, stop));
         double exec_time_s = exec_time_ms / 1000.0;
 
         double bandwidth = csr_calculate_bandwidthGBs(n_col, n_row, nnz, exec_time_s);
         double gflop = calculate_gflop(nnz, exec_time_s);
-        if (i > WARMUP_RUNS) {
+        if (i >= WARMUP_RUNS) {
             timer_arr[i - WARMUP_RUNS] = exec_time_s;
             bandwidth_arr[i - WARMUP_RUNS] = bandwidth;
             gflops_arr[i - WARMUP_RUNS] = gflop;
         }
         print_run_stat(i, exec_time_s, bandwidth, gflop);
     }
-    cudaEventDestroy(start);
-    cudaEventDestroy(stop);
+    CUDA_CHECK(cudaEventDestroy(start));
+    CUDA_CHECK(cudaEventDestroy(stop));
 
     final_info_print(timer_arr, bandwidth_arr, gflops_arr, TIMED_RUNS, result, n_row);
-    cudaFree(rowPtr);
-    cudaFree(colIndexes);
-    cudaFree(AVal);
-    cudaFree(v);
+    CUDA_CHECK(cudaFree(rowPtr));
+    CUDA_CHECK(cudaFree(colIndexes));
+    CUDA_CHECK(cudaFree(AVal));
+    CUDA_CHECK(cudaFree(v));
     return 0;
 }
