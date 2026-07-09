@@ -1,0 +1,9 @@
+module load gcc
+module load OpenMPI
+module load CUDA/11.8.0
+
+
+#SBATCH --nodes=xx
+#SBATCH --ntasks=xx
+#SBATCH --cpus-per-task=xx
+#SBATCH --gres=gpu:xx
