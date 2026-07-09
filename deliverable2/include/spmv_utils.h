@@ -5,6 +5,7 @@
 extern "C" {
 #endif
 #define dtype float
+#define MPI_DTYPE MPI_FLOAT
 
 void print_starting_info(const char* type, const char* matrix_name, int amount_runs, int amount_warmpup);
 void print_run_stat(int runid, double exec_time, double bandwidth, double gflops);
