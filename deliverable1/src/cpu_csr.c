@@ -62,7 +62,6 @@ void csr_globmem_spmv_sequential(int* rowPtr, int* colIndexes, dtype* AVal, int 
 }
 
 int main(int argc, char* argv[]) {
-    printf("CSR\n");
     if (argc != 2) {
         fprintf(stderr, "Usage %s <path_to_matrix>\n", argv[0]);
         exit(1);
@@ -75,7 +74,7 @@ int main(int argc, char* argv[]) {
 
     readMatrixFile(argv[1], &rowPtr, &colIndexes, &AVal, &n_row, &n_col, &nnz);
 
-    print_starting_info("CSR CPU", argv[1], TIMED_RUNS, WARMUP_RUNS);
+    print_starting_info("CSR CPU", argv[1], TIMED_RUNS, WARMUP_RUNS,-1,-1,-1);
     // Create dense vector
     dtype* v = malloc(n_col * sizeof(dtype));
     for (int i = 0; i < n_col; i++) {

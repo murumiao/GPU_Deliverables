@@ -6,7 +6,7 @@ extern "C" {
 #endif
 #define dtype float
 
-void print_starting_info(const char* type, const char* matrix_name, int amount_runs, int amount_warmpup);
+void print_starting_info(const char* type, const char* matrix_name, int amount_runs, int amount_warmpup, int block_size, int threads_per_block, int sharedmem_size);
 void print_run_stat(int runid, double exec_time, double bandwidth, double gflops);
 void final_info_print(double* timers, double* bandwidths, double* gflops, int amount_runs, dtype* results, int len_results);
 

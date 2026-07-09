@@ -5,6 +5,10 @@
 *.cubin
 *.fatbin
 
+*.out
+*.err
+
+
 bin/
 data/
 obj/

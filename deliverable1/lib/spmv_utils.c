@@ -26,11 +26,14 @@ void print_nnz_head_spmv(dtype* result_arr, int len_result, int n) {
     }
 }
 
-void print_starting_info(const char* type, const char* matrix_name, int amount_runs, int amount_warmpup) {
+void print_starting_info(const char* type, const char* matrix_name, int amount_runs, int amount_warmpup, int block_size, int threads_per_block, int sharedmem_size) {
     printf("========%s========\n", type);
     printf("Matrix: %s\n", matrix_name);
     printf("Timed runs\t %d\n", amount_runs);
     printf("Warmup runs\t %d\n", amount_warmpup);
+    printf("Blocks\t %d\n", block_size);
+    printf("Threads\t %d\n", threads_per_block);
+    printf("SharMem \t %d\n", sharedmem_size);
 }
 void print_run_stat(int runid, double exec_time, double bandwidth, double gflops) {
     printf("========Run #%d========\n", runid + 1);
@@ -70,12 +73,12 @@ double csr_calculate_bandwidthGBs(int n_col, int n_row, int nnz, double time_s) 
     }
     long long int byte_read_matrix = nnz * sizeof(int) + nnz * sizeof(dtype);
     long long int byte_read_row_ptr = (n_row + 1) * sizeof(int);
-    long long int byte_read_vector = n_col * sizeof(dtype);  // assuming worst cache
+    long long int byte_read_vector = nnz * sizeof(dtype);  // assuming worst cache
 
     long long int bytes_read = byte_read_matrix + byte_read_row_ptr + byte_read_vector;
 
     long long int byte_written_to_result = n_row * sizeof(dtype);
-    long double gigabyte_used = bytes_read + byte_written_to_result / 1.e9;
+    long double gigabyte_used = (bytes_read + byte_written_to_result) / 1.e9;
 
     return gigabyte_used / time_s;
 }
