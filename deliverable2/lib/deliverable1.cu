@@ -5,7 +5,7 @@
 #include "../include/my_time_lib.h"
 #include "../include/spmv_utils.h"
 
-#define MAX_STRING 100
+#define MAX_STRING 256
 
 void readMatrixFile(char* filePath, int** rowPtr, int** colIndexes, dtype** valCSR, int* n_row, int* n_col, int* nnz) {
     FILE* fp = fopen(filePath, "r");
