@@ -4,8 +4,8 @@
 #include <math.h>
 #include <sys/time.h>
 
-#define TOTAL_RUNS 55
-#define WARMUP_RUNS 5
+#define TOTAL_RUNS 5
+#define WARMUP_RUNS 1
 #define TIMED_RUNS TOTAL_RUNS - WARMUP_RUNS
 
 #define STR(s) #s

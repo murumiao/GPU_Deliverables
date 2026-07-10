@@ -204,7 +204,7 @@ int main(int argc, char* argv[]) {
         MPI_Recv(rowPtr, n_row + 1, MPI_INT, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
         MPI_Recv(colIndexes, nnz, MPI_INT, 0, 1, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
         MPI_Recv(AVal, nnz, MPI_DTYPE, 0, 2, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-        
+
         // allocate and receive globalRows
         globalRows = (int*)malloc(n_row * sizeof(int));
         MPI_Recv(globalRows, n_row, MPI_INT, 0, 3, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
@@ -226,26 +226,62 @@ int main(int argc, char* argv[]) {
     int threads_per_block = 256;
     int blocks_per_grid = (n_row + threads_per_block - 1) / threads_per_block;
 
-    // todo each rank does spmv
-    csr_globmem_spmv_sequential<<<blocks_per_grid, threads_per_block>>>(rowPtr, colIndexes, AVal, n_row, v, result);
+    double timer_arr[TIMED_RUNS], bandwidth_arr[TIMED_RUNS], gflops_arr[TIMED_RUNS];
+    cudaEvent_t start_spmv, stop_spmv;
+    cudaEventCreate(&start_spmv);
+    cudaEventCreate(&stop_spmv);
 
-    gpuErrchk(cudaPeekAtLastError());
-    gpuErrchk(cudaDeviceSynchronize());
+    for (int run_i = 0; run_i < TOTAL_RUNS; run_i++) {
+        cudaMemset(result, 0, n_row * sizeof(dtype));
 
-    // todo gather the results
-    int* displs = (int*)malloc(comm_size * sizeof(int));
-    displs[0] = 0;
-    for (int i = 1; i < comm_size; i++)
-        displs[i] = displs[i - 1] + splitNRows[i - 1];
-    dtype* reciever_buffer = (dtype*)malloc(total_nrows * sizeof(dtype));
-    MPI_Allgatherv(result, n_row, MPI_DTYPE, reciever_buffer, splitNRows, displs, MPI_DTYPE, MPI_COMM_WORLD);
-    free(displs);
+        cudaEventRecord(start_spmv);
+        // Each rank does spmv
+        csr_globmem_spmv_sequential<<<blocks_per_grid, threads_per_block>>>(rowPtr, colIndexes, AVal, n_row, v, result);
+        gpuErrchk(cudaPeekAtLastError());
+        gpuErrchk(cudaDeviceSynchronize());
 
-    dtype* total_solution = NULL;
-    reconstruct_solution(reciever_buffer, splitNRows, &total_solution, total_nrows, comm_size, my_rank);
-    print_nnz_head_spmv(total_solution, total_nrows, 5);
+        cudaEventRecord(stop_spmv);
+        cudaEventSynchronize(stop_spmv);
+
+        // Gather the results
+        int* displs = (int*)malloc(comm_size * sizeof(int));
+        displs[0] = 0;
+        for (int i = 1; i < comm_size; i++)
+            displs[i] = displs[i - 1] + splitNRows[i - 1];
+        dtype* reciever_buffer = (dtype*)malloc(total_nrows * sizeof(dtype));
+        MPI_Allgatherv(result, n_row, MPI_DTYPE, reciever_buffer, splitNRows, displs, MPI_DTYPE, MPI_COMM_WORLD);
+        free(displs);
+
+        dtype* total_solution = NULL;
+        reconstruct_solution(reciever_buffer, splitNRows, &total_solution, total_nrows, comm_size, my_rank);
+
+        // extract stats of the run
+        float exec_time_ms;
+        cudaEventElapsedTime(&exec_time_ms, start_spmv, stop_spmv);
+        double exec_time_s = exec_time_ms / 1000.0;
+
+        double bandwidth = csr_calculate_bandwidthGBs(n_col, n_row, nnz, exec_time_s);
+        double gflop = calculate_gflop(nnz, exec_time_s);
+        if (run_i > WARMUP_RUNS) {
+            timer_arr[run_i - WARMUP_RUNS] = exec_time_s;
+            bandwidth_arr[run_i - WARMUP_RUNS] = bandwidth;
+            gflops_arr[run_i - WARMUP_RUNS] = gflop;
+        }
+        if (my_rank == 0) {
+            print_run_stat(run_i, exec_time_s, bandwidth, gflop);
+            if (run_i == TOTAL_RUNS - 1) {
+                final_info_print(timer_arr, bandwidth_arr, gflops_arr, TIMED_RUNS, reciever_buffer, n_row);
+            }
+        }
+    }
+    cudaEventDestroy(start_spmv);
+    cudaEventDestroy(stop_spmv);
 
     nvmlShutdown();
     MPI_Finalize();
+    cudaFree(rowPtr);
+    cudaFree(colIndexes);
+    cudaFree(AVal);
+    cudaFree(v);
     return (0);
 }
