@@ -37,38 +37,45 @@ void assign_GPU_to_rank(int my_rank) {
     }
 }
 
-void splitCSR(int total, int n_row, int n_col, int* rowPtr, int* colIndexes, dtype* AVal, int*** splitRowPtr, int*** splitColIndexes, dtype*** splitAVal, int** splitNRows, int** splitNNZ) {
+void splitCSR(int total, int n_row, int n_col, int* rowPtr, int* colIndexes, dtype* AVal, int*** splitRowPtr, int*** splitColIndexes, dtype*** splitAVal, int** splitNRows, int** splitNNZ, int*** splitGlobalRows) {
     *splitRowPtr = (int**)malloc(total * sizeof(int*));
     *splitColIndexes = (int**)malloc(total * sizeof(int*));
-    *splitAVal = (float**)malloc(total * sizeof(float*));
+    *splitAVal = (dtype**)malloc(total * sizeof(dtype*));
     *splitNRows = (int*)malloc(total * sizeof(int));
     *splitNNZ = (int*)malloc(total * sizeof(int));
-
-    int base = n_row / total;
-    int rem = n_row % total;
+    *splitGlobalRows = (int**)malloc(total * sizeof(int*));
 
     for (int p = 0; p < total; p++) {
-        int rows = base + (p < rem ? 1 : 0);
-        int start = p * base + (p < rem ? p : rem);
-        int end = start + rows;
+        int localRows = 0;
+        int localNNZ = 0;
 
-        int firstNNZ = rowPtr[start];
-        int lastNNZ = rowPtr[end];
-        int nnzPart = lastNNZ - firstNNZ;
-
-        (*splitNRows)[p] = rows;
-        (*splitNNZ)[p] = nnzPart;
-
-        (*splitRowPtr)[p] = (int*)malloc((rows + 1) * sizeof(int));
-        (*splitColIndexes)[p] = (int*)malloc(nnzPart * sizeof(int));
-        (*splitAVal)[p] = (float*)malloc(nnzPart * sizeof(float));
-
-        for (int i = 0; i <= rows; i++) {
-            (*splitRowPtr)[p][i] = rowPtr[start + i] - firstNNZ;
+        for (int r = p; r < n_row; r += total) {
+            localRows++;
+            localNNZ += rowPtr[r + 1] - rowPtr[r];
         }
 
-        memcpy((*splitColIndexes)[p], &colIndexes[firstNNZ], nnzPart * sizeof(int));
-        memcpy((*splitAVal)[p], &AVal[firstNNZ], nnzPart * sizeof(float));
+        (*splitNRows)[p] = localRows;
+        (*splitNNZ)[p] = localNNZ;
+        (*splitGlobalRows)[p] = (int*)malloc(localRows * sizeof(int));
+        (*splitRowPtr)[p] = (int*)malloc((localRows + 1) * sizeof(int));
+        (*splitColIndexes)[p] = (int*)malloc(localNNZ * sizeof(int));
+        (*splitAVal)[p] = (dtype*)malloc(localNNZ * sizeof(dtype));
+
+        int localRow = 0;
+        int localNNZOffset = 0;
+        (*splitRowPtr)[p][0] = 0;
+
+        for (int r = p; r < n_row; r += total) {
+            (*splitGlobalRows)[p][localRow] = r;
+            int rowNNZ = rowPtr[r + 1] - rowPtr[r];
+
+            memcpy(&((*splitColIndexes)[p][localNNZOffset]), &colIndexes[rowPtr[r]], rowNNZ * sizeof(int));
+            memcpy(&((*splitAVal)[p][localNNZOffset]), &AVal[rowPtr[r]], rowNNZ * sizeof(dtype));
+
+            localNNZOffset += rowNNZ;
+            localRow++;
+            (*splitRowPtr)[p][localRow] = localNNZOffset;
+        }
     }
 }
 int main(int argc, char* argv[]) {
@@ -88,41 +95,54 @@ int main(int argc, char* argv[]) {
     int n_row = -1, n_col = -1, nnz = -1;
     int *rowPtr = NULL, *colIndexes = NULL;
     dtype* AVal = NULL;
+    int* globalRows = NULL;
     if (my_rank == 0) {
         // read file
         readMatrixFile(matrixPath, &rowPtr, &colIndexes, &AVal, &n_row, &n_col, &nnz);
         printf("Loaded data\n");
 
         // split data (1D)
-        int **splitRowPtr = NULL, **splitColIndexes = NULL;
+        int **splitRowPtr = NULL, **splitColIndexes = NULL, **splitGlobalRows = NULL;
         dtype** splitAVal = NULL;
-        int *splitNRows = NULL, *splitNNz = NULL;
-        splitCSR(comm_size, n_row, n_col, rowPtr, colIndexes, AVal, &splitRowPtr, &splitColIndexes, &splitAVal, &splitNRows, &splitNNz);
+        int *splitNRows = NULL, *splitNNZ = NULL;
+        splitCSR(comm_size, n_row, n_col, rowPtr, colIndexes, AVal, &splitRowPtr, &splitColIndexes, &splitAVal, &splitNRows, &splitNNZ, &splitGlobalRows);
         printf("Splitted the data\n");
         // send data
         MPI_Request req;
         for (int other_rank = 1; other_rank < comm_size; other_rank++) {
             MPI_Isend(&splitNRows[other_rank], 1, MPI_INT, other_rank, 0, MPI_COMM_WORLD, &req);
             MPI_Isend(&n_col, 1, MPI_INT, other_rank, 1, MPI_COMM_WORLD, &req);
-            MPI_Isend(&splitNNz[other_rank], 1, MPI_INT, other_rank, 2, MPI_COMM_WORLD, &req);
+            MPI_Isend(&splitNNZ[other_rank], 1, MPI_INT, other_rank, 2, MPI_COMM_WORLD, &req);
         }
         for (int other_rank = 1; other_rank < comm_size; other_rank++) {
             MPI_Send(splitRowPtr[other_rank], splitNRows[other_rank] + 1, MPI_INT, other_rank, 0, MPI_COMM_WORLD);
-            MPI_Send(splitColIndexes[other_rank], splitNNz[other_rank], MPI_INT, other_rank, 1, MPI_COMM_WORLD);
-            MPI_Send(splitAVal[other_rank], splitNNz[other_rank], MPI_DTYPE, other_rank, 2, MPI_COMM_WORLD);
+            MPI_Send(splitColIndexes[other_rank], splitNNZ[other_rank], MPI_INT, other_rank, 1, MPI_COMM_WORLD);
+            MPI_Send(splitAVal[other_rank], splitNNZ[other_rank], MPI_DTYPE, other_rank, 2, MPI_COMM_WORLD);
+            MPI_Send(splitGlobalRows[other_rank], splitNRows[other_rank], MPI_INT, other_rank, 3, MPI_COMM_WORLD);
         }
         // free memory
         free(rowPtr);
         free(colIndexes);
         free(AVal);
         n_row = splitNRows[0];
-        nnz = splitNNz[0];
-        cudaMemcpy(rowPtr, splitRowPtr[0], splitNRows[0], cudaMemcpyHostToDevice);
-        cudaMemcpy(colIndexes, splitColIndexes[0], nnz, cudaMemcpyHostToDevice);
-        cudaMemcpy(AVal, splitAVal[0], nnz, cudaMemcpyHostToDevice);
+        nnz = splitNNZ[0];
+        cudaMemcpy(rowPtr, splitRowPtr[0], (n_row + 1) * sizeof(int), cudaMemcpyHostToDevice);
+        cudaMemcpy(colIndexes, splitColIndexes[0], nnz * sizeof(int), cudaMemcpyHostToDevice);
+        cudaMemcpy(AVal, splitAVal[0], nnz * sizeof(int), cudaMemcpyHostToDevice);
+        cudaMemcpy(globalRows, splitGlobalRows[0], n_row * sizeof(int), cudaMemcpyHostToDevice);
+
+        for (int p = 0; p < comm_size; p++) {
+            free(splitRowPtr[p]);
+            free(splitColIndexes[p]);
+            free(splitAVal[p]);
+            free(splitGlobalRows[p]);
+        }
         free(splitRowPtr);
         free(splitColIndexes);
-        free(splitNNz);
+        free(splitAVal);
+        free(splitGlobalRows);
+        free(splitNRows);
+        free(splitNNZ);
     } else {
         // recieve size
         MPI_Recv(&n_row, 1, MPI_INT, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
@@ -138,9 +158,14 @@ int main(int argc, char* argv[]) {
         MPI_Recv(rowPtr, n_row + 1, MPI_INT, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
         MPI_Recv(colIndexes, nnz, MPI_INT, 0, 1, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
         MPI_Recv(AVal, nnz, MPI_DTYPE, 0, 2, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        MPI_Recv(&globalRows, n_row, MPI_INT, 0, 3, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
     }
 
     printf("[%d]: nrow: %d\n", my_rank, n_row);
+    
+    //todo each rank does spmv
+
+    //todo distribute the results
     nvmlShutdown();
     MPI_Finalize();
     return (0);
