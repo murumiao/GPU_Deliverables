@@ -1,0 +1,215 @@
+Rank 2 has device: 0
+Rank 0 has device: 0
+Rank 3 has device: 0
+Rank 1 has device: 0
+========CSR GPU SEQUENTIAL GLOBAL MEM========
+Matrix: ./data/tmp2.mtx
+Timed runs	 4
+Warmup runs	 1
+Blocks	 1
+Threads	 32
+SharMem 	 0
+Communication took: 0.000283
+========Run #1========
+Execution TIME (s)		!0.000179
+Estimated BANDWIDTH(GB/s)	!0.000513
+Estimated GFLOPS		!0.000067
+========Run #2========
+Execution TIME (s)		!0.000231
+Estimated BANDWIDTH(GB/s)	!0.000398
+Estimated GFLOPS		!0.000052
+========Run #3========
+Execution TIME (s)		!0.000230
+Estimated BANDWIDTH(GB/s)	!0.000399
+Estimated GFLOPS		!0.000052
+========Run #4========
+Execution TIME (s)		!0.000207
+Estimated BANDWIDTH(GB/s)	!0.000445
+Estimated GFLOPS		!0.000058
+========Run #5========
+Execution TIME (s)		!0.000233
+Estimated BANDWIDTH(GB/s)	!0.000396
+Estimated GFLOPS		!0.000052
+========STATS========
+Arithmetic mean TIME 		!0.000167 s
+Arithmetic mean BANDWIDTH	!0.000310 GB/s
+Arithmetic mean FLOPS		!0.000040 GFLOPS
+First 2 nnz values result	8.000000 | 39.000000 | 
+
+
+
+
+
+
+Rank 3 has device: 0
+Rank 0 has device: 0
+Rank 1 has device: 0
+========CSR GPU SEQUENTIAL GLOBAL MEM========
+Matrix: ./data/tmp2.mtx
+Timed runs	 4
+Warmup runs	 1
+Blocks	 1
+Threads	 128
+SharMem 	 0
+Rank 2 has device: 0
+Communication took: 0.000322
+========Run #1========
+Execution TIME (s)		!0.000154
+Estimated BANDWIDTH(GB/s)	!0.000599
+Estimated GFLOPS		!0.000078
+========Run #2========
+Execution TIME (s)		!0.000142
+Estimated BANDWIDTH(GB/s)	!0.000646
+Estimated GFLOPS		!0.000084
+========Run #3========
+Execution TIME (s)		!0.000425
+Estimated BANDWIDTH(GB/s)	!0.000216
+Estimated GFLOPS		!0.000028
+========Run #4========
+Execution TIME (s)		!0.000044
+Estimated BANDWIDTH(GB/s)	!0.002092
+Estimated GFLOPS		!0.000273
+========Run #5========
+Execution TIME (s)		!0.000048
+Estimated BANDWIDTH(GB/s)	!0.001903
+Estimated GFLOPS		!0.000248
+========STATS========
+Arithmetic mean TIME 		!0.000129 s
+Arithmetic mean BANDWIDTH	!0.001053 GB/s
+Arithmetic mean FLOPS		!0.000137 GFLOPS
+First 2 nnz values result	8.000000 | 39.000000 | 
+
+
+
+
+
+
+Rank 0 has device: 0
+Rank 1 has device: 0
+Rank 2 has device: 0
+Rank 3 has device: 0
+========CSR GPU SEQUENTIAL GLOBAL MEM========
+Matrix: ./data/tmp2.mtx
+Timed runs	 4
+Warmup runs	 1
+Blocks	 1
+Threads	 256
+SharMem 	 0
+Communication took: 0.000565
+========Run #1========
+Execution TIME (s)		!0.000899
+Estimated BANDWIDTH(GB/s)	!0.000102
+Estimated GFLOPS		!0.000013
+========Run #2========
+Execution TIME (s)		!0.000219
+Estimated BANDWIDTH(GB/s)	!0.000420
+Estimated GFLOPS		!0.000055
+========Run #3========
+Execution TIME (s)		!0.000233
+Estimated BANDWIDTH(GB/s)	!0.000394
+Estimated GFLOPS		!0.000051
+========Run #4========
+Execution TIME (s)		!0.000231
+Estimated BANDWIDTH(GB/s)	!0.000398
+Estimated GFLOPS		!0.000052
+========Run #5========
+Execution TIME (s)		!0.000207
+Estimated BANDWIDTH(GB/s)	!0.000445
+Estimated GFLOPS		!0.000058
+========STATS========
+Arithmetic mean TIME 		!0.000168 s
+Arithmetic mean BANDWIDTH	!0.000309 GB/s
+Arithmetic mean FLOPS		!0.000040 GFLOPS
+First 2 nnz values result	8.000000 | 39.000000 | 
+
+
+
+
+
+
+Rank 1 has device: 0
+Rank 2 has device: 0
+Rank 0 has device: 0
+Rank 3 has device: 0
+========CSR GPU SEQUENTIAL GLOBAL MEM========
+Matrix: ./data/tmp2.mtx
+Timed runs	 4
+Warmup runs	 1
+Blocks	 1
+Threads	 512
+SharMem 	 0
+Communication took: 0.001371
+========Run #1========
+Execution TIME (s)		!0.000319
+Estimated BANDWIDTH(GB/s)	!0.000289
+Estimated GFLOPS		!0.000038
+========Run #2========
+Execution TIME (s)		!0.000207
+Estimated BANDWIDTH(GB/s)	!0.000445
+Estimated GFLOPS		!0.000058
+========Run #3========
+Execution TIME (s)		!0.000144
+Estimated BANDWIDTH(GB/s)	!0.000637
+Estimated GFLOPS		!0.000083
+========Run #4========
+Execution TIME (s)		!0.000156
+Estimated BANDWIDTH(GB/s)	!0.000591
+Estimated GFLOPS		!0.000077
+========Run #5========
+Execution TIME (s)		!0.000206
+Estimated BANDWIDTH(GB/s)	!0.000447
+Estimated GFLOPS		!0.000058
+========STATS========
+Arithmetic mean TIME 		!0.000126 s
+Arithmetic mean BANDWIDTH	!0.000419 GB/s
+Arithmetic mean FLOPS		!0.000055 GFLOPS
+First 2 nnz values result	8.000000 | 39.000000 | 
+
+
+
+
+
+
+Rank 3 has device: 0
+Rank 2 has device: 0
+Rank 0 has device: 0
+Rank 1 has device: 0
+========CSR GPU SEQUENTIAL GLOBAL MEM========
+Matrix: ./data/tmp2.mtx
+Timed runs	 4
+Warmup runs	 1
+Blocks	 1
+Threads	 1024
+SharMem 	 0
+Communication took: 0.000707
+========Run #1========
+Execution TIME (s)		!0.000163
+Estimated BANDWIDTH(GB/s)	!0.000564
+Estimated GFLOPS		!0.000074
+========Run #2========
+Execution TIME (s)		!0.000208
+Estimated BANDWIDTH(GB/s)	!0.000443
+Estimated GFLOPS		!0.000058
+========Run #3========
+Execution TIME (s)		!0.000207
+Estimated BANDWIDTH(GB/s)	!0.000445
+Estimated GFLOPS		!0.000058
+========Run #4========
+Execution TIME (s)		!0.000155
+Estimated BANDWIDTH(GB/s)	!0.000594
+Estimated GFLOPS		!0.000078
+========Run #5========
+Execution TIME (s)		!0.000155
+Estimated BANDWIDTH(GB/s)	!0.000594
+Estimated GFLOPS		!0.000078
+========STATS========
+Arithmetic mean TIME 		!0.000129 s
+Arithmetic mean BANDWIDTH	!0.000408 GB/s
+Arithmetic mean FLOPS		!0.000053 GFLOPS
+First 2 nnz values result	8.000000 | 39.000000 | 
+
+
+
+
+
+

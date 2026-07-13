@@ -46,6 +46,8 @@ void assign_GPU_to_rank(int my_rank) {
     if (result != NVML_SUCCESS) {
         fprintf(stderr, "Process %d: Failed to get handle for device %d: %s\n", my_rank, my_device, nvmlErrorString(result));
         MPI_Abort(MPI_COMM_WORLD, EXIT_FAILURE);
+    } else {
+        fprintf(stdout, "Rank %d has device: %d\n", my_rank, my_device);
     }
 }
 
@@ -104,12 +106,29 @@ void reconstruct_solution(dtype* received, int* recvCounts, dtype** reconstructe
     }
 }
 
+/* *** *** *** *** *** *** *** *** *** *** *** *** *** *** */
+/* *** *** *** *** *** *** *** *** *** *** *** *** *** *** */
+/* *** *** *** *** *** *** *** *** *** *** *** *** *** *** */
+/* *** *** *** *** *** *** *** *** *** *** *** *** *** *** */
+//! MAIN FUNCTION HERE
+//! MAIN FUNCTION HERE
+//! MAIN FUNCTION HERE
+//! MAIN FUNCTION HERE
+//! MAIN FUNCTION HERE
+/* *** *** *** *** *** *** *** *** *** *** *** *** *** *** */
+/* *** *** *** *** *** *** *** *** *** *** *** *** *** *** */
+/* *** *** *** *** *** *** *** *** *** *** *** *** *** *** */
+/* *** *** *** *** *** *** *** *** *** *** *** *** *** *** */
+
 int main(int argc, char* argv[]) {
-    if (argc != 2) {
-        fprintf(stderr, "Usage %s <path_to_matrix>\n", argv[0]);
+    if (argc != 5) {
+        fprintf(stderr, "Usage %s <path_to_matrix> <mode[0,1,2,3]> <n_threads_per_block> <shared_mem_size>. Got %d args\n", argv[0], argc);
         exit(1);
     }
     char* matrixPath = argv[1];
+    int mode = atoi(argv[2]);
+    int threads_per_block = atoi(argv[3]);
+    int shared_mem_size = atoi(argv[4]);
 
     int my_rank, comm_size;
     MPI_Init(&argc, &argv);
@@ -117,6 +136,7 @@ int main(int argc, char* argv[]) {
     MPI_Comm_size(MPI_COMM_WORLD, &comm_size);
 
     assign_GPU_to_rank(my_rank);
+    MPI_Barrier(MPI_COMM_WORLD);
 
     int n_row = -1, n_col = -1, nnz = -1;
     int *rowPtr = NULL, *colIndexes = NULL;
@@ -125,18 +145,40 @@ int main(int argc, char* argv[]) {
 
     int* splitNRows = NULL;
     int total_nrows = -1;
+
+    int blocks_per_grid = (n_row + threads_per_block - 1) / threads_per_block;
+    if (blocks_per_grid == 0) {
+        blocks_per_grid = 1;
+    }
+    // Useful prints
+    if (my_rank == 0) {
+        if (mode == 0) {
+            print_starting_info("CSR GPU SEQUENTIAL GLOBAL MEM", argv[1], TIMED_RUNS, WARMUP_RUNS, blocks_per_grid, threads_per_block, 0);
+        } else if (mode == 1) {
+            print_starting_info("CSR GPU STRIDE GLOBAL MEM", argv[1], TIMED_RUNS, WARMUP_RUNS, blocks_per_grid, threads_per_block, 0);
+        } else if (mode == 2) {
+            print_starting_info("CSR GPU STRIDE SHARED MEM", argv[1], TIMED_RUNS, WARMUP_RUNS, blocks_per_grid, threads_per_block, shared_mem_size);
+        } else if (mode == 3) {
+            print_starting_info("CSR GPU SHARED MEM COALESCED", argv[1], TIMED_RUNS, WARMUP_RUNS, blocks_per_grid, threads_per_block, shared_mem_size);
+        } else {
+            fprintf(stderr, "Wrong mode\n");
+            exit(1);
+        }
+    }
+    cudaEvent_t start_reading_data, stop_reading_data;
+    gpuErrchk(cudaEventCreate(&start_reading_data));
+    gpuErrchk(cudaEventCreate(&stop_reading_data));
+    gpuErrchk(cudaEventRecord(start_reading_data));
     if (my_rank == 0) {
         // read file
         readMatrixFile(matrixPath, &rowPtr, &colIndexes, &AVal, &n_row, &n_col, &nnz);
         total_nrows = n_row;
-        printf("Loaded data\n");
 
         // split data (1D)
         int **splitRowPtr = NULL, **splitColIndexes = NULL, **splitGlobalRows = NULL;
         dtype** splitAVal = NULL;
         int* splitNNZ = NULL;
         splitCSR(comm_size, n_row, n_col, rowPtr, colIndexes, AVal, &splitRowPtr, &splitColIndexes, &splitAVal, &splitNRows, &splitNNZ, &splitGlobalRows);
-        printf("Splitted the data\n");
         // send data
         MPI_Request req;
         //** to allocate arrays
@@ -214,6 +256,36 @@ int main(int argc, char* argv[]) {
         MPI_Recv(splitNRows, comm_size, MPI_INT, 0, 4, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
     }
 
+    gpuErrchk(cudaEventRecord(stop_reading_data));
+    gpuErrchk(cudaEventSynchronize(stop_reading_data));
+
+    float communication_time_ms;
+    gpuErrchk(cudaEventElapsedTime(&communication_time_ms, start_reading_data, stop_reading_data));
+    double communication_time_s = communication_time_ms / 1000.0;
+    if (my_rank == 0) {
+        printf("Communication took: %fs\n", communication_time_s);
+    }
+    gpuErrchk(cudaEventDestroy(start_reading_data));
+    gpuErrchk(cudaEventDestroy(stop_reading_data));
+
+    /* *** *** *** *** *** *** *** *** *** *** *** *** *** *** */
+    /* *** *** *** *** *** *** *** *** *** *** *** *** *** *** */
+    /* *** *** *** *** *** *** *** *** *** *** *** *** *** *** */
+    /* *** *** *** *** *** *** *** *** *** *** *** *** *** *** */
+    /* *** *** *** *** *** *** *** *** *** *** *** *** *** *** */
+    /* *** *** *** *** *** *** *** *** *** *** *** *** *** *** */
+    //! FINISHED SPLITTING THE DATA^^. NOW PERFORM THE SPMV vv.
+    //! FINISHED SPLITTING THE DATA^^. NOW PERFORM THE SPMV vv.
+    //! FINISHED SPLITTING THE DATA^^. NOW PERFORM THE SPMV vv.
+    //! FINISHED SPLITTING THE DATA^^. NOW PERFORM THE SPMV vv.
+    //! FINISHED SPLITTING THE DATA^^. NOW PERFORM THE SPMV vv.
+    /* *** *** *** *** *** *** *** *** *** *** *** *** *** *** */
+    /* *** *** *** *** *** *** *** *** *** *** *** *** *** *** */
+    /* *** *** *** *** *** *** *** *** *** *** *** *** *** *** */
+    /* *** *** *** *** *** *** *** *** *** *** *** *** *** *** */
+    /* *** *** *** *** *** *** *** *** *** *** *** *** *** *** */
+    /* *** *** *** *** *** *** *** *** *** *** *** *** *** *** */
+
     // Create dense vector & result vector
     dtype* v;
     gpuErrchk(cudaMallocManaged(&v, n_col * sizeof(dtype)));
@@ -222,9 +294,6 @@ int main(int argc, char* argv[]) {
     }
     dtype* result;
     gpuErrchk(cudaMallocManaged(&result, n_row * sizeof(dtype)));
-
-    int threads_per_block = 256;
-    int blocks_per_grid = (n_row + threads_per_block - 1) / threads_per_block;
 
     double timer_arr[TIMED_RUNS], bandwidth_arr[TIMED_RUNS], gflops_arr[TIMED_RUNS];
     cudaEvent_t start_spmv, stop_spmv;
@@ -236,7 +305,15 @@ int main(int argc, char* argv[]) {
 
         cudaEventRecord(start_spmv);
         // Each rank does spmv
-        csr_globmem_spmv_sequential<<<blocks_per_grid, threads_per_block>>>(rowPtr, colIndexes, AVal, n_row, v, result);
+        if (mode == 0) {
+            csr_globmem_spmv_sequential<<<blocks_per_grid, threads_per_block>>>(rowPtr, colIndexes, AVal, n_row, v, result);
+        } else if (mode == 1) {
+            csr_globmem_spmv_stride<<<blocks_per_grid, threads_per_block>>>(rowPtr, colIndexes, AVal, n_row, v, result);
+        } else if (mode == 2) {
+            csr_sharmem_spmv_stride<<<blocks_per_grid, threads_per_block, shared_mem_size>>>(rowPtr, colIndexes, AVal, n_row, v, result);
+        } else if (mode == 3) {
+            csr_sharmem_coalesced<<<blocks_per_grid, threads_per_block, shared_mem_size>>>(rowPtr, colIndexes, AVal, n_row, v, result);
+        }
         gpuErrchk(cudaPeekAtLastError());
         gpuErrchk(cudaDeviceSynchronize());
 
@@ -276,6 +353,10 @@ int main(int argc, char* argv[]) {
     }
     cudaEventDestroy(start_spmv);
     cudaEventDestroy(stop_spmv);
+
+    if (my_rank == 0) {
+        printf("\n\n\n\n\n\n");
+    }
 
     nvmlShutdown();
     MPI_Finalize();
