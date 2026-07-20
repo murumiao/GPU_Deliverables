@@ -15,6 +15,8 @@ double coo_calculate_bandwidthGBs(int n_col, int n_row, int nnz, double time_s);
 double csr_calculate_bandwidthGBs(int n_col, int n_row, int nnz, double time_s);
 double calculate_gflop(int nnz, double time_s);
 
+void save_statistics(char* file_name, int len, double* communication, double* exec, double* bandwidth, double* gflops);
+void make_dir(char* dirname, int my_rank);
 #ifdef __cplusplus
 }
 #endif

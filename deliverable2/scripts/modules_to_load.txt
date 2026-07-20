@@ -1,9 +1,14 @@
-module load gcc
+module load GCC/12.3.0
 module load OpenMPI
-module load CUDA/11.8.0
-
+module load CUDA
 
 #SBATCH --nodes=xx
 #SBATCH --ntasks=xx
 #SBATCH --cpus-per-task=xx
 #SBATCH --gres=gpu:xx
+
+#SBATCH --exclusive
+
+#SBATCH --ntasks=4 <- 4 MPI process
+#SBATCH --gres=gpu:4 <- shared GPU acorss all MPI proc.
+#SBATCH --gpus-per-task=1 <- assegna GPU a task

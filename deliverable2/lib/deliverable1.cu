@@ -16,11 +16,12 @@ void readMatrixFile(char* filePath, int** rowPtr, int** colIndexes, dtype** valC
     char buffer[MAX_STRING];
     int i = 0;
     int last_row = -1;
+    int header_read = 0;
     while (fgets(buffer, MAX_STRING, fp)) {
         if (buffer[0] == '%') continue;
         if (buffer[0] == ' ') continue;
         if (buffer[0] == '\n') continue;
-        if (*n_row == -1 || *n_col == -1 || *nnz == -1) {
+        if (!header_read) {
             char* token = strtok(buffer, " ");
             *n_row = atoi(token);
             token = strtok(NULL, " ");
@@ -31,6 +32,7 @@ void readMatrixFile(char* filePath, int** rowPtr, int** colIndexes, dtype** valC
             *rowPtr = (int*)malloc((*n_row + 1) * sizeof(int));
             *colIndexes = (int*)malloc(*nnz * sizeof(int));
             *valCSR = (dtype*)malloc(*nnz * sizeof(dtype));
+            header_read = 1;
         } else {
             char* token = strtok(buffer, " ");
             int row = atoi(token) - 1;  // 1-based index

@@ -4,8 +4,12 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
+#include <sys/types.h>
 
 #include "../include/my_time_lib.h"
+
+struct stat st = {0};
 
 void print_nnz_head_spmv(dtype* result_arr, int len_result, int n) {
     printf("First %d nnz values result\t", (int)fmin(n, len_result));
@@ -86,4 +90,21 @@ double csr_calculate_bandwidthGBs(int n_col, int n_row, int nnz, double time_s) 
 double calculate_gflop(int nnz, double time_s) {
     // GFLOP=2*operations / time_s
     return (2 * nnz / 1.e9) / time_s;
+}
+
+void save_statistics(char* file_name, int len, double* communication, double* exec, double* bandwidth, double* gflops) {
+    FILE* fptr;
+    fptr = fopen(file_name, "w");
+    fprintf(fptr, "ID, Communication(s), Execution(s), Bandwidth(GB/s), FLOPS(GFLOPS)\n");
+    for (int i = 0; i < len; i++) {
+        fprintf(fptr, "%d, %f, %f, %f, %f\n", i, communication[i], exec[i], bandwidth[i], gflops[i]);
+    }
+    fclose(fptr);
+}
+void make_dir(char* dirname, int my_rank) {
+    if (my_rank == 0) {
+        if (stat(dirname, &st) == -1) {
+            mkdir(dirname, 0777);
+        }
+    }
 }

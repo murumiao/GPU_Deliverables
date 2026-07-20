@@ -1,4 +1,4 @@
-NUMBER_PROCESSES=4
+NUMBER_PROCESSES=2
 FILE_PATH="./bin/distributed_spmv"
 MATRIX_PATH="./data/tmp2.mtx"
 # MATRIX_PATH="./data/sorted_ASIC_680ks.mtx"
@@ -7,6 +7,7 @@ MATRIX_PATH="./data/tmp2.mtx"
 N_THREADSS_CSR=(32 128 256 512 1024)
 SHARED_MEM=(4096 16384 32768 49152)
 MODE=0
+N_PROCESS=(2 8 32 128 512 1024)
 
 for N_THREADS in "${N_THREADSS_CSR[@]}"; do
     if [[ $MODE -eq 2  || $MODE -eq 4 ]]; then

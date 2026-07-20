@@ -28,3 +28,4 @@ double sigma_fn_sol(double *v, double mu, int len) {
 
     return (sigma);
 }
+
