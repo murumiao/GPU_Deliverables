@@ -8,10 +8,20 @@
 *.out
 *.err
 
+*.csv
+*.txt
+
 
 bin/
 data/
 obj/
 results/
+results0/
 plots/
 parsed/
+analytics/
+errors/
+
+
+
+.venv/

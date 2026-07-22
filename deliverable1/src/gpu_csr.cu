@@ -151,7 +151,6 @@ __global__ void csr_sharmem_spmv_stride(int* rowPtr, int* colIndexes, dtype* AVa
     }
 }
 
-
 // coalesced and shared (less bank conflicts)
 __global__ void csr_sharmem_coalesced(int* rowPtr, int* colIndexes, dtype* AVal, int rowLen, dtype* v, dtype* result) {
     extern __shared__ dtype shared_data[];
@@ -216,17 +215,16 @@ int main(int argc, char* argv[]) {
 
     int blocks_per_grid = (n_row + threads_per_block - 1) / threads_per_block;
 
+
     readMatrixFile(argv[1], &rowPtr, &colIndexes, &AVal, &n_row, &n_col, &nnz);
 
-    int blocks_per_grid = (n_row + threads_per_block - 1) / threads_per_block;
-    ;
     if (mode == 0) {
         print_starting_info("CSR GPU SEQUENTIAL GLOBAL MEM", argv[1], TIMED_RUNS, WARMUP_RUNS, blocks_per_grid, threads_per_block, -1);
     } else if (mode == 1) {
         print_starting_info("CSR GPU STRIDE GLOBAL MEM", argv[1], TIMED_RUNS, WARMUP_RUNS, blocks_per_grid, threads_per_block, -1);
     } else if (mode == 2) {
         print_starting_info("CSR GPU STRIDE SHARED MEM", argv[1], TIMED_RUNS, WARMUP_RUNS);
-    }  else if (mode == 3) {
+    } else if (mode == 3) {
         print_starting_info("CSR GPU SHARED MEM COALESCED", argv[1], TIMED_RUNS, WARMUP_RUNS);
     } else {
         fprintf(stderr, "Wrong mode\n");

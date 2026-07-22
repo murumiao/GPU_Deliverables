@@ -8,6 +8,8 @@
 #include "../include/deliverable1.cuh"
 #include "../include/spmv_utils.h"
 
+static const int HOST_WARP_SIZE = 32;
+
 #define gpuErrchk(ans)                        \
     {                                         \
         gpuAssert((ans), __FILE__, __LINE__); \
@@ -15,8 +17,29 @@
 inline void gpuAssert(cudaError_t code, const char* file, int line, bool abort = true) {
     if (code != cudaSuccess) {
         fprintf(stderr, "GPUassert: %s %s %d\n", cudaGetErrorString(code), file, line);
-        if (abort) exit(code);
+        if (abort) {
+            MPI_Abort(MPI_COMM_WORLD, EXIT_FAILURE);
+        };
     }
+}
+
+int calculate_blocks_per_grid(int mode, int row_count, int threads_per_block) {
+    if (row_count <= 0) {
+        return 1;
+    }
+
+    if (mode == 0) {
+        int blocks = (row_count + threads_per_block - 1) / threads_per_block;
+        return blocks > 0 ? blocks : 1;
+    }
+
+    int warps_per_block = threads_per_block / HOST_WARP_SIZE;
+    if (warps_per_block <= 0) {
+        warps_per_block = 1;
+    }
+
+    int blocks = (row_count + warps_per_block - 1) / warps_per_block;
+    return blocks > 0 ? blocks : 1;
 }
 
 void assign_GPU_to_rank(int my_rank) {
@@ -121,14 +144,22 @@ void reconstruct_solution(dtype* received, int* recvCounts, dtype** reconstructe
 /* *** *** *** *** *** *** *** *** *** *** *** *** *** *** */
 
 int main(int argc, char* argv[]) {
-    if (argc != 5) {
-        fprintf(stderr, "Usage %s <path_to_matrix> <mode[0,1,2,3]> <n_threads_per_block> <shared_mem_size>. Got %d args\n", argv[0], argc);
-        exit(1);
+    if (argc != 5 && argc != 6) {
+        fprintf(stderr, "Usage %s <path_to_matrix> <mode[0,1,2,3]> <n_threads_per_block> <shared_mem_size> <save path, optional>. Got %d args\n", argv[0], argc);
+        MPI_Abort(MPI_COMM_WORLD, EXIT_FAILURE);
     }
+
     char* matrixPath = argv[1];
     int mode = atoi(argv[2]);
     int threads_per_block = atoi(argv[3]);
     int shared_mem_size = atoi(argv[4]);
+    char* save_folder_path;
+    if (argc == 5) {
+        // save_folder_path = "./GPU_Deliverables/deliverable2/results/";
+        save_folder_path = "results/";
+    } else {
+        save_folder_path = argv[5];
+    }
 
     int my_rank, comm_size;
     MPI_Init(&argc, &argv);
@@ -147,33 +178,15 @@ int main(int argc, char* argv[]) {
     int total_nrows = -1;
 
     dtype* dense_vector;
+    dtype* result;
 
     double communication_time_arr[TIMED_RUNS], exec_time_arr[TIMED_RUNS], bandwidth_arr[TIMED_RUNS], gflops_arr[TIMED_RUNS];
     cudaEvent_t start_spmv, stop_spmv, start_reading_data, stop_reading_data;
+    dtype* total_solution = NULL;
     gpuErrchk(cudaEventCreate(&start_spmv));
     gpuErrchk(cudaEventCreate(&stop_spmv));
     gpuErrchk(cudaEventCreate(&start_reading_data));
     gpuErrchk(cudaEventCreate(&stop_reading_data));
-
-    int blocks_per_grid = (n_row + threads_per_block - 1) / threads_per_block;
-    if (blocks_per_grid == 0) {
-        blocks_per_grid = 1;
-    }
-    // Useful prints
-    if (my_rank == 0) {
-        if (mode == 0) {
-            print_starting_info("(mode0)CSR GPU SEQUENTIAL GLOBAL MEM", argv[1], TIMED_RUNS, WARMUP_RUNS, blocks_per_grid, threads_per_block, 0);
-        } else if (mode == 1) {
-            print_starting_info("(mode1)CSR GPU STRIDE GLOBAL MEM", argv[1], TIMED_RUNS, WARMUP_RUNS, blocks_per_grid, threads_per_block, 0);
-        } else if (mode == 2) {
-            print_starting_info("(mode2)CSR GPU STRIDE SHARED MEM", argv[1], TIMED_RUNS, WARMUP_RUNS, blocks_per_grid, threads_per_block, shared_mem_size);
-        } else if (mode == 3) {
-            print_starting_info("(mode3)CSR GPU SHARED MEM COALESCED", argv[1], TIMED_RUNS, WARMUP_RUNS, blocks_per_grid, threads_per_block, shared_mem_size);
-        } else {
-            fprintf(stderr, "Wrong mode\n");
-            exit(1);
-        }
-    }
 
     for (int run_i = 0; run_i < TOTAL_RUNS; run_i++) {
         gpuErrchk(cudaEventRecord(start_reading_data));
@@ -284,6 +297,32 @@ int main(int argc, char* argv[]) {
         gpuErrchk(cudaEventRecord(stop_reading_data));
         gpuErrchk(cudaEventSynchronize(stop_reading_data));
 
+        int blocks_per_grid = calculate_blocks_per_grid(mode, n_row, threads_per_block);
+
+        if (mode != 0 && threads_per_block < HOST_WARP_SIZE) {
+            fprintf(stderr, "Rank %d: mode %d requires at least %d threads per block, got %d\n", my_rank, mode, HOST_WARP_SIZE, threads_per_block);
+            MPI_Abort(MPI_COMM_WORLD, EXIT_FAILURE);
+        }
+        if (mode != 0 && threads_per_block % HOST_WARP_SIZE != 0) {
+            fprintf(stderr, "Rank %d: mode %d requires threads per block to be a multiple of %d, got %d\n", my_rank, mode, HOST_WARP_SIZE, threads_per_block);
+            MPI_Abort(MPI_COMM_WORLD, EXIT_FAILURE);
+        }
+
+        if (my_rank == 0 && run_i == 0) {
+            if (mode == 0) {
+                print_starting_info("(mode0)CSR GPU SEQUENTIAL GLOBAL MEM", argv[1], TIMED_RUNS, WARMUP_RUNS, blocks_per_grid, threads_per_block, 0);
+            } else if (mode == 1) {
+                print_starting_info("(mode1)CSR GPU STRIDE GLOBAL MEM", argv[1], TIMED_RUNS, WARMUP_RUNS, blocks_per_grid, threads_per_block, 0);
+            } else if (mode == 2) {
+                print_starting_info("(mode2)CSR GPU STRIDE SHARED MEM", argv[1], TIMED_RUNS, WARMUP_RUNS, blocks_per_grid, threads_per_block, shared_mem_size);
+            } else if (mode == 3) {
+                print_starting_info("(mode3)CSR GPU SHARED MEM COALESCED", argv[1], TIMED_RUNS, WARMUP_RUNS, blocks_per_grid, threads_per_block, shared_mem_size);
+            } else {
+                fprintf(stderr, "Wrong mode\n");
+                MPI_Abort(MPI_COMM_WORLD, EXIT_FAILURE);
+            }
+        }
+
         /* *** *** *** *** *** *** *** *** *** *** *** *** *** *** */
         /* *** *** *** *** *** *** *** *** *** *** *** *** *** *** */
         /* *** *** *** *** *** *** *** *** *** *** *** *** *** *** */
@@ -303,7 +342,6 @@ int main(int argc, char* argv[]) {
         /* *** *** *** *** *** *** *** *** *** *** *** *** *** *** */
 
         // Create result vector
-        dtype* result;
         gpuErrchk(cudaMallocManaged(&result, n_row * sizeof(dtype)));
         cudaMemset(result, 0, n_row * sizeof(dtype));
 
@@ -332,8 +370,12 @@ int main(int argc, char* argv[]) {
         MPI_Allgatherv(result, n_row, MPI_DTYPE, reciever_buffer, splitNRows, displs, MPI_DTYPE, MPI_COMM_WORLD);
         free(displs);
 
-        dtype* total_solution = NULL;
+        if (total_solution != NULL) {
+            free(total_solution);
+            total_solution = NULL;
+        }
         reconstruct_solution(reciever_buffer, splitNRows, &total_solution, total_nrows, comm_size, my_rank);
+        free(reciever_buffer);
 
         // extract stats of the run
         float communication_time_ms;
@@ -358,17 +400,18 @@ int main(int argc, char* argv[]) {
     gpuErrchk(cudaEventDestroy(start_reading_data));
     gpuErrchk(cudaEventDestroy(stop_reading_data));
 
+    final_info_print(my_rank, communication_time_arr, exec_time_arr, bandwidth_arr, gflops_arr, TIMED_RUNS, total_solution, total_nrows);
     /***********************************************************************
      Each rank saves own stats (per rank efficency = t_max/t_rank)
     ***********************************************************************/
     // create folder
-    char tmp[256];
-    char folder_name[256];
+    char tmp[512];
+    char folder_name[512];
     char* matrix_name = strrchr(matrixPath, '/');
     matrix_name = matrix_name + 1;
 
-    // sprintf(folder_name, "./GPU_Deliverables/deliverable2/results/");
-    sprintf(folder_name, "results/");
+    sprintf(folder_name, save_folder_path);
+    // sprintf(folder_name, "results/");
     make_dir(folder_name, my_rank);
     strcpy(tmp, folder_name);
 
@@ -392,7 +435,7 @@ int main(int argc, char* argv[]) {
     make_dir(folder_name, my_rank);
     MPI_Barrier(MPI_COMM_WORLD);
 
-    char file_name[256];
+    char file_name[512];
     sprintf(file_name, "%s/rank_%d.csv", folder_name, my_rank);
 
     save_statistics(file_name, TIMED_RUNS, communication_time_arr, exec_time_arr, bandwidth_arr, gflops_arr);

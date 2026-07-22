@@ -46,9 +46,10 @@ void print_run_stat(int runid, double exec_time, double bandwidth, double gflops
     printf("Estimated GFLOPS\t\t!%f\n", gflops);
 }
 
-void final_info_print(double* timers, double* bandwidths, double* gflops, int amount_runs, dtype* results, int len_results) {
-    printf("========STATS========\n");
-    printf("Arithmetic mean TIME \t\t!%f s\n", arithmetic_mean(timers, amount_runs));
+void final_info_print(int rank, double* communication, double* exec, double* bandwidths, double* gflops, int amount_runs, dtype* results, int len_results) {
+    printf("========[rank %d] STATS========\n", rank);
+    printf("Arithmetic mean COMMUNICATION \t!%f s\n", arithmetic_mean(communication, amount_runs));
+    printf("Arithmetic mean EXECUTION \t\t!%f s\n", arithmetic_mean(exec, amount_runs));
     printf("Arithmetic mean BANDWIDTH\t!%f GB/s\n", arithmetic_mean(bandwidths, amount_runs));
     printf("Arithmetic mean FLOPS\t\t!%f GFLOPS\n", arithmetic_mean(gflops, amount_runs));
     print_nnz_head_spmv(results, len_results, 5);
