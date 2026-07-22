@@ -2,6 +2,7 @@ module load GCC/12.3.0
 module load OpenMPI
 module load CUDA
 
+
 #SBATCH --nodes=xx
 #SBATCH --ntasks=xx
 #SBATCH --cpus-per-task=xx

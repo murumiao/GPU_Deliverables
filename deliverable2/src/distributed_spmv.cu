@@ -146,8 +146,7 @@ int main(int argc, char* argv[]) {
     int* splitNRows = NULL;
     int total_nrows = -1;
 
-    dtype* v;
-    dtype* result;
+    dtype* dense_vector;
 
     double communication_time_arr[TIMED_RUNS], exec_time_arr[TIMED_RUNS], bandwidth_arr[TIMED_RUNS], gflops_arr[TIMED_RUNS];
     cudaEvent_t start_spmv, stop_spmv, start_reading_data, stop_reading_data;
@@ -163,13 +162,13 @@ int main(int argc, char* argv[]) {
     // Useful prints
     if (my_rank == 0) {
         if (mode == 0) {
-            print_starting_info("CSR GPU SEQUENTIAL GLOBAL MEM", argv[1], TIMED_RUNS, WARMUP_RUNS, blocks_per_grid, threads_per_block, 0);
+            print_starting_info("(mode0)CSR GPU SEQUENTIAL GLOBAL MEM", argv[1], TIMED_RUNS, WARMUP_RUNS, blocks_per_grid, threads_per_block, 0);
         } else if (mode == 1) {
-            print_starting_info("CSR GPU STRIDE GLOBAL MEM", argv[1], TIMED_RUNS, WARMUP_RUNS, blocks_per_grid, threads_per_block, 0);
+            print_starting_info("(mode1)CSR GPU STRIDE GLOBAL MEM", argv[1], TIMED_RUNS, WARMUP_RUNS, blocks_per_grid, threads_per_block, 0);
         } else if (mode == 2) {
-            print_starting_info("CSR GPU STRIDE SHARED MEM", argv[1], TIMED_RUNS, WARMUP_RUNS, blocks_per_grid, threads_per_block, shared_mem_size);
+            print_starting_info("(mode2)CSR GPU STRIDE SHARED MEM", argv[1], TIMED_RUNS, WARMUP_RUNS, blocks_per_grid, threads_per_block, shared_mem_size);
         } else if (mode == 3) {
-            print_starting_info("CSR GPU SHARED MEM COALESCED", argv[1], TIMED_RUNS, WARMUP_RUNS, blocks_per_grid, threads_per_block, shared_mem_size);
+            print_starting_info("(mode3)CSR GPU SHARED MEM COALESCED", argv[1], TIMED_RUNS, WARMUP_RUNS, blocks_per_grid, threads_per_block, shared_mem_size);
         } else {
             fprintf(stderr, "Wrong mode\n");
             exit(1);
@@ -186,6 +185,11 @@ int main(int argc, char* argv[]) {
             readMatrixFile(matrixPath, &rowPtr, &colIndexes, &AVal, &n_row, &n_col, &nnz);
             total_nrows = n_row;
 
+            // dense vector
+            gpuErrchk(cudaMallocManaged(&dense_vector, n_col * sizeof(dtype)));
+            for (int i = 0; i < n_col; i++) {
+                dense_vector[i] = 1.0;
+            }
             // split data (1D)
             int **splitRowPtr = NULL, **splitColIndexes = NULL, **splitGlobalRows = NULL;
             dtype** splitAVal = NULL;
@@ -213,6 +217,10 @@ int main(int argc, char* argv[]) {
             // ** reconstruction info
             for (int other_rank = 1; other_rank < comm_size; other_rank++) {
                 MPI_Isend(splitNRows, comm_size, MPI_INT, other_rank, 4, MPI_COMM_WORLD, &req);
+            }
+            // communicate dense vector
+            for (int other_rank = 1; other_rank < comm_size; other_rank++) {
+                MPI_Isend(dense_vector, n_col, MPI_DTYPE, other_rank, 5, MPI_COMM_WORLD, &req);
             }
             // free memory
             free(rowPtr);
@@ -267,6 +275,10 @@ int main(int argc, char* argv[]) {
             // recieve for reconstruction
             splitNRows = (int*)malloc(comm_size * sizeof(int));
             MPI_Recv(splitNRows, comm_size, MPI_INT, 0, 4, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+
+            // recieve for dense vector
+            gpuErrchk(cudaMallocManaged(&dense_vector, n_col * sizeof(dtype)));
+            MPI_Recv(dense_vector, n_col, MPI_DTYPE, 0, 5, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
         }
 
         gpuErrchk(cudaEventRecord(stop_reading_data));
@@ -290,27 +302,23 @@ int main(int argc, char* argv[]) {
         /* *** *** *** *** *** *** *** *** *** *** *** *** *** *** */
         /* *** *** *** *** *** *** *** *** *** *** *** *** *** *** */
 
-        // Create dense vector & result vector
-        gpuErrchk(cudaMallocManaged(&v, n_col * sizeof(dtype)));
-        for (int i = 0; i < n_col; i++) {
-            v[i] = 1.0;
-        }
+        // Create result vector
+        dtype* result;
         gpuErrchk(cudaMallocManaged(&result, n_row * sizeof(dtype)));
         cudaMemset(result, 0, n_row * sizeof(dtype));
 
         cudaEventRecord(start_spmv);
         // Each rank does spmv
         if (mode == 0) {
-            csr_globmem_spmv_sequential<<<blocks_per_grid, threads_per_block>>>(rowPtr, colIndexes, AVal, n_row, v, result);
+            csr_globmem_spmv_sequential<<<blocks_per_grid, threads_per_block>>>(rowPtr, colIndexes, AVal, n_row, dense_vector, result);
         } else if (mode == 1) {
-            csr_globmem_spmv_stride<<<blocks_per_grid, threads_per_block>>>(rowPtr, colIndexes, AVal, n_row, v, result);
+            csr_globmem_spmv_stride<<<blocks_per_grid, threads_per_block>>>(rowPtr, colIndexes, AVal, n_row, dense_vector, result);
         } else if (mode == 2) {
-            csr_sharmem_spmv_stride<<<blocks_per_grid, threads_per_block, shared_mem_size>>>(rowPtr, colIndexes, AVal, n_row, v, result);
+            csr_sharmem_spmv_stride<<<blocks_per_grid, threads_per_block, shared_mem_size>>>(rowPtr, colIndexes, AVal, n_row, dense_vector, result);
         } else if (mode == 3) {
-            csr_sharmem_coalesced<<<blocks_per_grid, threads_per_block, shared_mem_size>>>(rowPtr, colIndexes, AVal, n_row, v, result);
+            csr_sharmem_coalesced<<<blocks_per_grid, threads_per_block, shared_mem_size>>>(rowPtr, colIndexes, AVal, n_row, dense_vector, result);
         }
         gpuErrchk(cudaPeekAtLastError());
-        gpuErrchk(cudaDeviceSynchronize());
 
         gpuErrchk(cudaEventRecord(stop_spmv));
         gpuErrchk(cudaEventSynchronize(stop_spmv));
@@ -338,7 +346,7 @@ int main(int argc, char* argv[]) {
 
         double bandwidth = csr_calculate_bandwidthGBs(n_col, n_row, nnz, exec_time_s);
         double gflop = calculate_gflop(nnz, exec_time_s);
-        if (run_i > WARMUP_RUNS) {
+        if (run_i >= WARMUP_RUNS) {
             communication_time_arr[run_i - WARMUP_RUNS] = communication_time_s;
             exec_time_arr[run_i - WARMUP_RUNS] = exec_time_s;
             bandwidth_arr[run_i - WARMUP_RUNS] = bandwidth;
@@ -358,6 +366,8 @@ int main(int argc, char* argv[]) {
     char folder_name[256];
     char* matrix_name = strrchr(matrixPath, '/');
     matrix_name = matrix_name + 1;
+
+    // sprintf(folder_name, "./GPU_Deliverables/deliverable2/results/");
     sprintf(folder_name, "results/");
     make_dir(folder_name, my_rank);
     strcpy(tmp, folder_name);
@@ -390,7 +400,7 @@ int main(int argc, char* argv[]) {
     gpuErrchk(cudaFree(rowPtr));
     gpuErrchk(cudaFree(colIndexes));
     gpuErrchk(cudaFree(AVal));
-    gpuErrchk(cudaFree(v));
+    gpuErrchk(cudaFree(dense_vector));
 
     nvmlShutdown();
     MPI_Finalize();
