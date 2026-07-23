@@ -23,6 +23,15 @@ inline void gpuAssert(cudaError_t code, const char* file, int line, bool abort =
     }
 }
 
+typedef struct {
+    int rank;
+    size_t host_bytes;
+    size_t gpu_bytes;
+    int n_row;
+    int n_col;
+    int nnz;
+} MemoryRecord;
+
 int calculate_blocks_per_grid(int mode, int row_count, int threads_per_block) {
     if (row_count <= 0) {
         return 1;
@@ -74,19 +83,19 @@ void assign_GPU_to_rank(int my_rank) {
     }
 }
 
-void splitCSR(int total, int n_row, int n_col, int* rowPtr, int* colIndexes, dtype* AVal, int*** splitRowPtr, int*** splitColIndexes, dtype*** splitAVal, int** splitNRows, int** splitNNZ, int*** splitGlobalRows) {
-    *splitRowPtr = (int**)malloc(total * sizeof(int*));
-    *splitColIndexes = (int**)malloc(total * sizeof(int*));
-    *splitAVal = (dtype**)malloc(total * sizeof(dtype*));
-    *splitNRows = (int*)malloc(total * sizeof(int));
-    *splitNNZ = (int*)malloc(total * sizeof(int));
-    *splitGlobalRows = (int**)malloc(total * sizeof(int*));
+void splitCSR(int comm_size, int n_row, int n_col, int* rowPtr, int* colIndexes, dtype* AVal, int*** splitRowPtr, int*** splitColIndexes, dtype*** splitAVal, int** splitNRows, int** splitNNZ, int*** splitGlobalRows) {
+    *splitRowPtr = (int**)malloc(comm_size * sizeof(int*));
+    *splitColIndexes = (int**)malloc(comm_size * sizeof(int*));
+    *splitAVal = (dtype**)malloc(comm_size * sizeof(dtype*));
+    *splitNRows = (int*)malloc(comm_size * sizeof(int));
+    *splitNNZ = (int*)malloc(comm_size * sizeof(int));
+    *splitGlobalRows = (int**)malloc(comm_size * sizeof(int*));
 
-    for (int p = 0; p < total; p++) {
+    for (int p = 0; p < comm_size; p++) {
         int localRows = 0;
         int localNNZ = 0;
 
-        for (int r = p; r < n_row; r += total) {
+        for (int r = p; r < n_row; r += comm_size) {
             localRows++;
             localNNZ += rowPtr[r + 1] - rowPtr[r];
         }
@@ -102,7 +111,7 @@ void splitCSR(int total, int n_row, int n_col, int* rowPtr, int* colIndexes, dty
         int localNNZOffset = 0;
         (*splitRowPtr)[p][0] = 0;
 
-        for (int r = p; r < n_row; r += total) {
+        for (int r = p; r < n_row; r += comm_size) {
             (*splitGlobalRows)[p][localRow] = r;
             int rowNNZ = rowPtr[r + 1] - rowPtr[r];
 
@@ -127,6 +136,34 @@ void reconstruct_solution(dtype* received, int* recvCounts, dtype** reconstructe
         }
         offset += recvCounts[rank];
     }
+}
+
+void write_memory_footprint_csv(const char* filename, int rank, int threads, int sharedmem, size_t host_bytes, size_t gpu_bytes, int n_row, int n_col, int nnz) {
+    MemoryRecord local = {rank, host_bytes, gpu_bytes, n_row, n_col, nnz};
+
+    int comm_size;
+    MPI_Comm_size(MPI_COMM_WORLD, &comm_size);
+    MemoryRecord* all = NULL;
+    if (rank == 0)
+        all = (MemoryRecord*)malloc(comm_size * sizeof(MemoryRecord));
+
+    MPI_Gather(&local, sizeof(MemoryRecord), MPI_BYTE, all, sizeof(MemoryRecord), MPI_BYTE, 0, MPI_COMM_WORLD);
+
+    if (rank == 0) {
+        FILE* fp = fopen(filename, "w");
+        if (!fp) {
+            fprintf(stderr, "fopen cant find %s", filename);
+            free(all);
+            return;
+        }
+        fprintf(fp, "rank, threads, sharedmem, n_row, n_col, nnz, host_memory_bytes, gpu_memory_bytes, total_memory_bytes, total_memory_megabytes\n");
+        for (int i = 0; i < comm_size; i++) {
+            fprintf(fp, "%d,%d,%d,%d,%d,%d,%zu,%zu,%zu,%f\n", all[i].rank, threads, sharedmem, all[i].n_row, all[i].n_col, all[i].nnz, all[i].host_bytes, all[i].gpu_bytes, all[i].host_bytes + all[i].gpu_bytes, (all[i].host_bytes + all[i].gpu_bytes) / 1e6);
+        }
+        fclose(fp);
+        free(all);
+    }
+    MPI_Barrier(MPI_COMM_WORLD);
 }
 
 /* *** *** *** *** *** *** *** *** *** *** *** *** *** *** */
@@ -156,7 +193,7 @@ int main(int argc, char* argv[]) {
     char* save_folder_path;
     if (argc == 5) {
         // save_folder_path = "./GPU_Deliverables/deliverable2/results/";
-        save_folder_path = "results/";
+        save_folder_path = "results_1D/";
     } else {
         save_folder_path = argv[5];
     }
@@ -180,6 +217,7 @@ int main(int argc, char* argv[]) {
     dtype* dense_vector;
     dtype* result;
 
+    size_t host_bytes = 0, gpu_bytes = 0;
     double communication_time_arr[TIMED_RUNS], exec_time_arr[TIMED_RUNS], bandwidth_arr[TIMED_RUNS], gflops_arr[TIMED_RUNS];
     cudaEvent_t start_spmv, stop_spmv, start_reading_data, stop_reading_data;
     dtype* total_solution = NULL;
@@ -188,6 +226,7 @@ int main(int argc, char* argv[]) {
     gpuErrchk(cudaEventCreate(&start_reading_data));
     gpuErrchk(cudaEventCreate(&stop_reading_data));
 
+    int first_run = 0;
     for (int run_i = 0; run_i < TOTAL_RUNS; run_i++) {
         gpuErrchk(cudaEventRecord(start_reading_data));
         if (my_rank == 0) {
@@ -234,6 +273,29 @@ int main(int argc, char* argv[]) {
             // communicate dense vector
             for (int other_rank = 1; other_rank < comm_size; other_rank++) {
                 MPI_Isend(dense_vector, n_col, MPI_DTYPE, other_rank, 5, MPI_COMM_WORLD, &req);
+            }
+            // calculate memoery footprint before free
+            if (first_run == 0) {
+                first_run = 1;
+                host_bytes += (comm_size) * sizeof(int*) * 3;
+                host_bytes += (comm_size) * sizeof(dtype*);
+                host_bytes += (comm_size) * sizeof(int) * 2;
+
+                for (int p = 0; p < comm_size; p++) {
+                    host_bytes += (splitNRows[p] + 1) * sizeof(int) * 2;
+                    host_bytes += (splitNNZ[p] + 1) * sizeof(int) * 2;
+                }
+                host_bytes += (total_nrows) * sizeof(dtype);
+                host_bytes += (total_nrows) * sizeof(int);
+                host_bytes += (comm_size) * sizeof(int) * 2;
+                host_bytes += (total_nrows) * sizeof(dtype);
+
+                gpu_bytes += n_col * sizeof(dtype);
+                gpu_bytes += (n_row + 1) * sizeof(int);
+                gpu_bytes += nnz * sizeof(int);
+                gpu_bytes += nnz * sizeof(dtype);
+                gpu_bytes += n_row * sizeof(int);
+                gpu_bytes += n_row * sizeof(dtype);
             }
             // free memory
             free(rowPtr);
@@ -292,6 +354,23 @@ int main(int argc, char* argv[]) {
             // recieve for dense vector
             gpuErrchk(cudaMallocManaged(&dense_vector, n_col * sizeof(dtype)));
             MPI_Recv(dense_vector, n_col, MPI_DTYPE, 0, 5, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+            if (first_run == 0) {
+                first_run = 1;
+                host_bytes += (n_row + 1) * sizeof(int);
+                host_bytes += (nnz) * sizeof(int);
+                host_bytes += (nnz) * sizeof(dtype);
+
+                host_bytes += (n_row) * sizeof(int);
+                host_bytes += (total_nrows) * sizeof(int);
+                host_bytes += (comm_size) * sizeof(int);
+                host_bytes += (n_col) * sizeof(dtype);
+
+                gpu_bytes += (n_row + 1) * sizeof(int);
+                gpu_bytes += nnz * sizeof(int);
+                gpu_bytes += nnz * sizeof(dtype);
+                gpu_bytes += n_col * sizeof(dtype);
+                gpu_bytes += n_row * sizeof(dtype);
+            }
         }
 
         gpuErrchk(cudaEventRecord(stop_reading_data));
@@ -439,6 +518,10 @@ int main(int argc, char* argv[]) {
     sprintf(file_name, "%s/rank_%d.csv", folder_name, my_rank);
 
     save_statistics(file_name, TIMED_RUNS, communication_time_arr, exec_time_arr, bandwidth_arr, gflops_arr);
+
+    char mem_footprint_file_name[512];
+    sprintf(mem_footprint_file_name, "%s/memory_footprint.csv", folder_name);
+    write_memory_footprint_csv(mem_footprint_file_name, my_rank, threads_per_block, shared_mem_size, host_bytes, gpu_bytes, n_row, n_col, nnz);
 
     gpuErrchk(cudaFree(rowPtr));
     gpuErrchk(cudaFree(colIndexes));
