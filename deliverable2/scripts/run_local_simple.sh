@@ -1,5 +1,6 @@
 NUMBER_PROCESSES=2
-FILE_PATH="./bin/distributed_spmv"
+# FILE_PATH="./bin/distributed_spmv"
+FILE_PATH="./bin/distributed_spmv_2D"
 # MATRIX_PATH="./data/tmp2.mtx"
 MATRIX_PATH="./data/sorted_ASIC_680ks.mtx"
 
