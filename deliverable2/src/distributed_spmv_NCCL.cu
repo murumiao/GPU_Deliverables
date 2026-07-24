@@ -1,6 +1,7 @@
 #include <cuda_runtime.h>
 #include <math.h>
 #include <mpi.h>
+#include <nccl.h>
 #include <nvml.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -301,7 +302,7 @@ static void load_local_csr_block_mpiio(const char* matrix_path, MPI_Comm comm, i
                                        int* local_row_start, int* local_n_row,
                                        int* local_col_start, int* local_n_col,
                                        int* local_nnz, double* local_balance_metric,
-                                       int** rowPtr, int** colIndexes, dtype** AVal) {
+                                       int** rowPtr, int** colIndexes, dtype** AVal, ncclComm_t nccl_comm) {
     MPI_File fh;
     MPI_Status status;
     MPI_Offset file_size = 0;
@@ -435,14 +436,14 @@ static void load_local_csr_block_mpiio(const char* matrix_path, MPI_Comm comm, i
         fprintf(stderr, "Rank %d: failed to allocate global load-balance buffers\n", my_rank);
         MPI_Abort(comm, EXIT_FAILURE);
     }
-
-    MPI_Allreduce(local_row_nnz, global_row_nnz, *global_n_row, MPI_INT, MPI_SUM, comm);
-    MPI_Allreduce(local_col_nnz, global_col_nnz, *global_n_col, MPI_INT, MPI_SUM, comm);
-    MPI_Allreduce(local_row_min_col, global_row_min_col, *global_n_row, MPI_INT, MPI_MIN, comm);
-    MPI_Allreduce(local_row_max_col, global_row_max_col, *global_n_row, MPI_INT, MPI_MAX, comm);
-    MPI_Allreduce(local_col_min_row, global_col_min_row, *global_n_col, MPI_INT, MPI_MIN, comm);
-    MPI_Allreduce(local_col_max_row, global_col_max_row, *global_n_col, MPI_INT, MPI_MAX, comm);
-
+    ncclGroupStart();
+    ncclAllReduce(local_row_nnz, global_row_nnz, *global_n_row, ncclInt, ncclSum, nccl_comm, 0);
+    ncclAllReduce(local_col_nnz, global_col_nnz, *global_n_col, ncclInt, ncclSum, nccl_comm, 0);
+    ncclAllReduce(local_row_min_col, global_row_min_col, *global_n_row, ncclInt, ncclMin, nccl_comm, 0);
+    ncclAllReduce(local_row_max_col, global_row_max_col, *global_n_row, ncclInt, ncclMax, nccl_comm, 0);
+    ncclAllReduce(local_col_min_row, global_col_min_row, *global_n_col, ncclInt, ncclMin, nccl_comm, 0);
+    ncclAllReduce(local_col_max_row, global_col_max_row, *global_n_col, ncclInt, ncclMax, nccl_comm, 0);
+    ncclGroupEnd();
     double* row_weights = (double*)malloc((size_t)(*global_n_row) * sizeof(double));
     double* col_weights = (double*)malloc((size_t)(*global_n_col) * sizeof(double));
     if (row_weights == NULL || col_weights == NULL) {
@@ -699,6 +700,16 @@ int main(int argc, char* argv[]) {
     MPI_Comm_size(MPI_COMM_WORLD, &comm_size);
 
     assign_GPU_to_rank(my_rank);
+    ncclUniqueId id;
+
+    if (my_rank == 0)
+        ncclGetUniqueId(&id);
+
+    MPI_Bcast(&id, sizeof(id), MPI_BYTE, 0, MPI_COMM_WORLD);
+
+    ncclComm_t nccl_comm;
+    ncclCommInitRank(&nccl_comm, comm_size, id, my_rank);
+
     MPI_Barrier(MPI_COMM_WORLD);
     if (my_rank == 0)
         fprintf(stderr, "Doing matrix=%s, mode=%d, threads=%d, shared_mem=%d, lb_mode=%d\n", matrixPath, mode, threads_per_block, shared_mem_size, load_balance_mode);
@@ -767,7 +778,7 @@ int main(int argc, char* argv[]) {
             fprintf(stderr, "Run: %d/%d\n", run_i + 1, TOTAL_RUNS);
         gpuErrchk(cudaEventRecord(start_reading_data));
         double local_balance_metric = 0.0;
-        load_local_csr_block_mpiio(matrixPath, grid_comm, comm_size, my_rank, grid_dims, my_coords, load_balance_mode, &global_n_row, &global_n_col, &global_nnz, row_partition_starts, row_partition_counts, col_partition_starts, col_partition_counts, &local_row_start, &local_n_row, &local_col_start, &local_n_col, &local_nnz, &local_balance_metric, &rowPtr, &colIndexes, &AVal);
+        load_local_csr_block_mpiio(matrixPath, grid_comm, comm_size, my_rank, grid_dims, my_coords, load_balance_mode, &global_n_row, &global_n_col, &global_nnz, row_partition_starts, row_partition_counts, col_partition_starts, col_partition_counts, &local_row_start, &local_n_row, &local_col_start, &local_n_col, &local_nnz, &local_balance_metric, &rowPtr, &colIndexes, &AVal, nccl_comm);
 
         if (run_i == 0) {
             if (load_balance_mode == LOAD_BALANCE_NNZ) {
@@ -888,7 +899,6 @@ int main(int argc, char* argv[]) {
                 row_reduced_result = NULL;
             }
         }
-
         MPI_Reduce(result, row_reduced_result, local_n_row, MPI_DTYPE, MPI_SUM, 0, row_comm);
 
         int* gather_recvcounts = (int*)malloc(comm_size * sizeof(int));
@@ -903,6 +913,7 @@ int main(int argc, char* argv[]) {
         dtype* gather_send_buffer = (my_coords[1] == 0) ? row_reduced_result : result;
         int gather_send_count = (my_coords[1] == 0) ? local_n_row : 0;
         total_solution = (dtype*)malloc(global_n_row * sizeof(dtype));
+
         MPI_Allgatherv(gather_send_buffer, gather_send_count, MPI_DTYPE, total_solution, gather_recvcounts, gather_displs, MPI_DTYPE, grid_comm);
 
         free(gather_recvcounts);

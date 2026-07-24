@@ -205,6 +205,8 @@ int main(int argc, char* argv[]) {
 
     assign_GPU_to_rank(my_rank);
     MPI_Barrier(MPI_COMM_WORLD);
+    if (my_rank == 0)
+        fprintf(stderr, "Doing matrix=%s, mode=%d, threads=%d, shared_mem=%d\n", matrixPath, mode, threads_per_block, shared_mem_size);
 
     int n_row = -1, n_col = -1, nnz = -1;
     int *rowPtr = NULL, *colIndexes = NULL;
@@ -228,6 +230,8 @@ int main(int argc, char* argv[]) {
 
     int first_run = 0;
     for (int run_i = 0; run_i < TOTAL_RUNS; run_i++) {
+        if (my_rank == 0)
+            fprintf(stderr, "Run: %d/%d\n", run_i, TOTAL_RUNS);
         gpuErrchk(cudaEventRecord(start_reading_data));
         if (my_rank == 0) {
             // read file

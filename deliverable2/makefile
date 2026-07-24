@@ -30,8 +30,8 @@ CUDA_OPT_FLAGS :=
 # Include directories and libraries
 ###############################################################################
 
-INCLUDES := -I./include
-LIBS := -lm -lstdc++
+INCLUDES := -I./include 
+LIBS := -lm -lstdc++ -lnccl
 
 ###############################################################################
 # Project directories
